@@ -48,49 +48,13 @@ from typing import Optional, Sequence
 
 import numpy as np
 
-# Dataset molecule-size statistics. Kept in sync with the constants at the top of
-# flowr/data/interpolate.py; imported from there rather than duplicated so the two
-# cannot drift.
-from flowr.data.interpolate import (
-    CROSSDOCKED_MOLECULE_SIZE_MAX,
-    CROSSDOCKED_MOLECULE_SIZE_MEAN,
-    CROSSDOCKED_MOLECULE_SIZE_MIN,
-    CROSSDOCKED_MOLECULE_SIZE_STD_DEV,
-    KINODATA_MOLECULE_SIZE_MAX,
-    KINODATA_MOLECULE_SIZE_MEAN,
-    KINODATA_MOLECULE_SIZE_MIN,
-    KINODATA_MOLECULE_SIZE_STD_DEV,
-    PLINDER_MOLECULE_SIZE_MAX,
-    PLINDER_MOLECULE_SIZE_MEAN,
-    PLINDER_MOLECULE_SIZE_MIN,
-    PLINDER_MOLECULE_SIZE_STD_DEV,
+# Dataset size statistics live in a dedicated module so this one can be imported
+# from interpolate.py without a cycle.
+from flowr.data.size_constants import (  # noqa: F401
+    DATASET_SIZE_STATS,
+    DEFAULT_MAX_SIZE,
+    DEFAULT_MIN_SIZE,
 )
-
-DATASET_SIZE_STATS = {
-    "crossdocked": (
-        CROSSDOCKED_MOLECULE_SIZE_MEAN,
-        CROSSDOCKED_MOLECULE_SIZE_STD_DEV,
-        CROSSDOCKED_MOLECULE_SIZE_MIN,
-        CROSSDOCKED_MOLECULE_SIZE_MAX,
-    ),
-    "plinder": (
-        PLINDER_MOLECULE_SIZE_MEAN,
-        PLINDER_MOLECULE_SIZE_STD_DEV,
-        PLINDER_MOLECULE_SIZE_MIN,
-        PLINDER_MOLECULE_SIZE_MAX,
-    ),
-    "kinodata": (
-        KINODATA_MOLECULE_SIZE_MEAN,
-        KINODATA_MOLECULE_SIZE_STD_DEV,
-        KINODATA_MOLECULE_SIZE_MIN,
-        KINODATA_MOLECULE_SIZE_MAX,
-    ),
-}
-
-# Fallbacks when no dataset is named. Match the defaults of
-# interpolate.sample_mol_sizes so behaviour is consistent across the two paths.
-DEFAULT_MIN_SIZE = 5
-DEFAULT_MAX_SIZE = 80
 
 KINDS = ("uniform", "normal", "poisson", "reference", "dataset")
 
