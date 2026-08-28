@@ -18,18 +18,24 @@ from flowr.util.molrepr import GeometricMol, GeometricMolBatch, SmolBatch, SmolM
 from flowr.util.pocket import PocketComplex, ProteinPocket
 from flowr.util.rdkit import ConformerGenerator
 
-PLINDER_MOLECULE_SIZE_MEAN = 48.3841740914044
-PLINDER_MOLECULE_SIZE_STD_DEV = 20.328270251327584
-PLINDER_MOLECULE_SIZE_MAX = 182
-PLINDER_MOLECULE_SIZE_MIN = 8
-CROSSDOCKED_MOLECULE_SIZE_MEAN = 40.0
-CROSSDOCKED_MOLECULE_SIZE_STD_DEV = 10.0
-CROSSDOCKED_MOLECULE_SIZE_MAX = 82
-CROSSDOCKED_MOLECULE_SIZE_MIN = 5
-KINODATA_MOLECULE_SIZE_MEAN = 31.24166706404082
-KINODATA_MOLECULE_SIZE_STD_DEV = 6.369577265037612
-KINODATA_MOLECULE_SIZE_MAX = 84
-KINODATA_MOLECULE_SIZE_MIN = 4
+# Dataset molecule-size statistics now live in flowr/data/size_constants.py so
+# that decoration_size.py can read them without importing this module (which
+# would be circular). Re-exported here for backwards compatibility.
+from flowr.data.decoration_size import DecorationSizeSampler  # noqa: E402
+from flowr.data.size_constants import (  # noqa: E402,F401
+    CROSSDOCKED_MOLECULE_SIZE_MAX,
+    CROSSDOCKED_MOLECULE_SIZE_MEAN,
+    CROSSDOCKED_MOLECULE_SIZE_MIN,
+    CROSSDOCKED_MOLECULE_SIZE_STD_DEV,
+    KINODATA_MOLECULE_SIZE_MAX,
+    KINODATA_MOLECULE_SIZE_MEAN,
+    KINODATA_MOLECULE_SIZE_MIN,
+    KINODATA_MOLECULE_SIZE_STD_DEV,
+    PLINDER_MOLECULE_SIZE_MAX,
+    PLINDER_MOLECULE_SIZE_MEAN,
+    PLINDER_MOLECULE_SIZE_MIN,
+    PLINDER_MOLECULE_SIZE_STD_DEV,
+)
 
 _InterpT = tuple[list[SmolMol], list[SmolMol], list[SmolMol], list[torch.Tensor]]
 _GeometricInterpT = tuple[
@@ -1820,6 +1826,9 @@ class GeometricInterpolant(Interpolant):
         fragment_inpainting: bool = False,
         fragment_growing: bool = False,
         grow_size: Optional[int] = None,
+        decoration_size: Optional[int] = None,
+        decoration_size_dist: Optional[str] = None,
+        decoration_size_seed: Optional[int] = None,
         prior_center: Optional[torch.Tensor] = None,
         substructure_inpainting: bool = False,
         substructure: Optional[str] = None,
@@ -1890,6 +1899,16 @@ class GeometricInterpolant(Interpolant):
         self.fragment_inpainting = fragment_inpainting
         self.fragment_growing = fragment_growing
         self.grow_size = grow_size
+        # Explicit control over how many atoms fragment-conditioned modes add.
+        # None means "derive the budget from the reference ligand", i.e. the
+        # historical behaviour. Built here rather than at each call site so the
+        # RNG lives for the whole run and draws are not correlated per batch.
+        self.decoration_size_sampler = DecorationSizeSampler.from_args(
+            decoration_size=decoration_size,
+            decoration_size_dist=decoration_size_dist,
+            dataset=dataset,
+            seed=decoration_size_seed,
+        )
         # Prior center for fragment growing (original coordinates, before any transformation)
         self.prior_center = prior_center
         # Transformed prior center (will be set during interpolation after applying COM shift)
@@ -2701,10 +2720,19 @@ class GeometricInterpolant(Interpolant):
                 )
                 return from_mol
 
-        # Special handling for fragment_growing with grow_size
-        # In this case, the input IS the fragment and N_variable == 0,
-        # but we want to add grow_size atoms to it
-        if (
+        # An explicit decoration size makes the atom budget independent of the
+        # reference ligand, which is what lets a BARE SCAFFOLD be decorated: in
+        # that case every atom is part of the core, so N_variable == 0 and the
+        # branch below would otherwise discard the scaffold and fall back to de
+        # novo. Applies to any fragment-conditioned mode, not just
+        # fragment_growing.
+        explicit_size = self._sample_decoration_size(N_variable, N_fixed)
+
+        if explicit_size is not None:
+            N_variable_sampled = explicit_size
+        # Legacy path: fragment_growing sized by --grow_size. Kept so existing
+        # commands behave identically; --decoration_size takes precedence above.
+        elif (
             N_variable == 0
             and mode == "fragment_growing"
             and self.grow_size is not None
@@ -3011,6 +3039,25 @@ class GeometricInterpolant(Interpolant):
             device=mol.device,
         )
 
+    def _sample_decoration_size(self, n_variable: int, n_fixed: int):
+        """Draw the number of atoms to generate, or None when not size-controlled.
+
+        Returns None whenever no decoration-size flag was given, so the caller
+        falls through to the historical reference-derived budget and existing
+        commands are unaffected.
+
+        The draw is made once per molecule (this method is called per molecule
+        from ``_build_fragment_prior``), never once per batch: reusing a single
+        draw across a batch would turn a requested distribution into a constant.
+        """
+        sampler = getattr(self, "decoration_size_sampler", None)
+        if sampler is None:
+            return None
+        # reference_size is only consulted by the reference/dataset kinds, which
+        # are defined relative to the reference ligand's R-group count.
+        reference = n_variable if n_variable > 0 else None
+        return sampler.sample(reference_size=reference, n=1, n_fixed=n_fixed)[0]
+
     def _apply_size_variation(self, base_size: int) -> int:
         """Apply size variation for inference fragment generation."""
         if base_size == 0:
@@ -3273,6 +3320,10 @@ class ComplexInterpolant(GeometricInterpolant):
         virtual_atom_p: float = 0.0,
         virtual_atom_noise_std: float = 0.5,
         noatom_index: Optional[int] = None,
+        decoration_size: Optional[int] = None,
+        decoration_size_dist: Optional[str] = None,
+        decoration_size_seed: Optional[int] = None,
+        fragment_size_variation: float = 0.1,
     ):
 
         super().__init__(
@@ -3294,6 +3345,11 @@ class ComplexInterpolant(GeometricInterpolant):
             fragment_inpainting=fragment_inpainting,
             fragment_growing=fragment_growing,
             grow_size=grow_size,
+            decoration_size=decoration_size,
+            decoration_size_dist=decoration_size_dist,
+            decoration_size_seed=decoration_size_seed,
+            # Previously not forwarded, so --sample_mol_sizes always used 0.1.
+            fragment_size_variation=fragment_size_variation,
             prior_center=prior_center,
             max_fragment_cuts=max_fragment_cuts,
             substructure_inpainting=substructure_inpainting,
