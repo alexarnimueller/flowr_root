@@ -79,7 +79,12 @@ def evaluate(args):
     ) = load_model(
         args,
     )
-    model = model.to("cuda")
+    # Fall back to CPU when no GPU is present, so a pocket + MPO config can be
+    # smoke-tested without a CUDA device. Generation is far slower on CPU.
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
+        print("WARNING: no CUDA device found, running on CPU (slow)")
+    model = model.to(device)
     model.eval()
 
     print("Model complete.")

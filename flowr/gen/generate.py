@@ -2,6 +2,13 @@ from pathlib import Path
 
 import torch
 
+
+def _resolve_device(device=None):
+    """Pick the device: explicit value, else CUDA when present, else CPU."""
+    if device is not None:
+        return device
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
 import flowr.util.rdkit as smolRD
 
 
@@ -9,7 +16,7 @@ def generate_molecules(
     args,
     model,
     prior,
-    device="cuda",
+    device=None,
     save_traj=False,
     iter="",
     should_cancel=None,
@@ -39,6 +46,7 @@ def generate_molecules(
     Returns:
         list[rdkit.Chem.Mol]: Generated ligand molecules as RDKit Mol objects
     """
+    device = _resolve_device(device)
 
     # Get molecule data
     prior = {k: v.to(device) if torch.is_tensor(v) else v for k, v in prior.items()}
@@ -71,7 +79,7 @@ def generate_ligands_per_target(
     prior,
     posterior,
     pocket_noise="fix",
-    device="cuda",
+    device=None,
     save_traj=False,
     iter="",
     guidance_params: dict | None = None,
@@ -116,6 +124,7 @@ def generate_ligands_per_target(
                 - generated_ligands: list[rdkit.Chem.Mol] - Generated ligand molecules
                 - generated_pdbs: list[str] - Paths to generated PDB files with pocket conformations
     """
+    device = _resolve_device(device)
 
     assert (
         len(set([cmpl.metadata["system_id"] for cmpl in posterior["complex"]])) == 1
@@ -169,17 +178,20 @@ def generate_ligands_per_target(
         save_traj=save_traj,
         iter=iter,
         final_inpaint=getattr(args, "final_inpaint", False),
-        apply_guidance=guidance_params["apply_guidance"],
-        guidance_window_start=guidance_params["window_start"],
-        guidance_window_end=guidance_params["window_end"],
-        value_key=guidance_params["value_key"],
+        apply_guidance=guidance_params.get("apply_guidance", False),
+        guidance_window_start=guidance_params.get("window_start", 0.0),
+        guidance_window_end=guidance_params.get("window_end", 0.4),
+        # A multi-objective config carries an `objectives` block instead of the
+        # single-value keys, so every one of these is optional with the same
+        # defaults the model itself declares.
+        value_key=guidance_params.get("value_key", "affinity"),
         # NOTE: subvalue_key was present in the config but never forwarded, so
         # a config selecting e.g. pkd silently guided on the pic50 default.
         subvalue_key=guidance_params.get("subvalue_key", "pic50"),
-        mu=guidance_params["mu"],
-        sigma=guidance_params["sigma"],
-        maximize=guidance_params["maximize"],
-        coord_noise_level=guidance_params["coord_noise_level"],
+        mu=guidance_params.get("mu", 8.0),
+        sigma=guidance_params.get("sigma", 2.0),
+        maximize=guidance_params.get("maximize", True),
+        coord_noise_level=guidance_params.get("coord_noise_level", 0.2),
         objectives=guidance_params.get("objectives"),
         guidance_temperature=guidance_params.get("temperature", 1.0),
         guidance_ess_threshold=guidance_params.get("ess_threshold", 0.5),
@@ -239,8 +251,8 @@ def generate_ligands_per_target(
     return gen_ligs
 
 
-def generate_n_ligands(args, hparams, model, batch, batch_idx=0, device="cuda"):
-    prior, data, interpolated, _ = batch
+def generate_n_ligands(args, hparams, model, batch, batch_idx=0, device=None):
+    device = _resolve_device(device)
 
     assert (
         len(set([cmpl.metadata["system_id"] for cmpl in data["complex"]])) == 1
@@ -341,7 +353,7 @@ def generate_ligands_per_target_selective(
     posterior_target,
     posterior_untarget,
     pocket_noise="fix",
-    device="cuda",
+    device=None,
     save_traj=False,
     iter="",
     guidance_params: dict | None = None,
@@ -385,6 +397,7 @@ def generate_ligands_per_target_selective(
                 - generated_ligands: list[rdkit.Chem.Mol] - Generated ligand molecules
                 - generated_pdbs: list[str] - Paths to generated PDB files with pocket conformations
     """
+    device = _resolve_device(device)
 
     assert (
         len(set([cmpl.metadata["system_id"] for cmpl in posterior_target["complex"]]))
@@ -456,14 +469,15 @@ def generate_ligands_per_target_selective(
         corr_iters=args.corrector_iters,
         save_traj=save_traj,
         iter=iter,
-        apply_guidance=guidance_params["apply_guidance"],
-        guidance_window_start=guidance_params["window_start"],
-        guidance_window_end=guidance_params["window_end"],
-        value_key=guidance_params["value_key"],
-        mu=guidance_params["mu"],
-        sigma=guidance_params["sigma"],
-        maximize=guidance_params["maximize"],
-        coord_noise_level=guidance_params["coord_noise_level"],
+        apply_guidance=guidance_params.get("apply_guidance", False),
+        guidance_window_start=guidance_params.get("window_start", 0.0),
+        guidance_window_end=guidance_params.get("window_end", 0.4),
+        value_key=guidance_params.get("value_key", "affinity"),
+        subvalue_key=guidance_params.get("subvalue_key", "pic50"),
+        mu=guidance_params.get("mu", 8.0),
+        sigma=guidance_params.get("sigma", 2.0),
+        maximize=guidance_params.get("maximize", True),
+        coord_noise_level=guidance_params.get("coord_noise_level", 0.2),
     )
 
     # Generate RDKit molecules
