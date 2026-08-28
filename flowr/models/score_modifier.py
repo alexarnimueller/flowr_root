@@ -215,4 +215,6 @@ class ThresholdedLinearModifier(ScoreModifier):
         self.threshold = threshold
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.min(x, self.threshold) / self.threshold
+        # torch.min(Tensor, float) is not a valid overload; clamp is the
+        # tensor-and-scalar equivalent of min(x, threshold).
+        return torch.clamp(x, max=self.threshold) / self.threshold

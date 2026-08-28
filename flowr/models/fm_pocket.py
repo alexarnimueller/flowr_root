@@ -19,6 +19,11 @@ from flowr.gen.cancellation import raise_if_cancelled
 from flowr.models.integrator import Integrator
 from flowr.models.losses import LossComputer
 from flowr.models.mol_builder import MolBuilder
+from flowr.models.property_objectives import (
+    desirability,
+    effective_sample_size,
+    resampling_weights,
+)
 from flowr.models.score_modifier import MaxGaussianModifier, MinGaussianModifier
 from flowr.models.semla import MolecularGenerator
 from flowr.util.tokeniser import Vocabulary
@@ -50,6 +55,10 @@ def apply_smc_guidance(
     mu: float = 8.0,
     sigma=2.0,
     maximize: bool = True,
+    objectives: list | None = None,
+    temperature: float = 1.0,
+    ess_threshold: float = 0.5,
+    mol_builder_fn=None,
 ) -> tuple[
     Dict[str, torch.Tensor],
     Dict[str, torch.Tensor],
@@ -58,24 +67,96 @@ def apply_smc_guidance(
     Dict[str, torch.Tensor],
     Dict[str, torch.Tensor],
     Dict[str, torch.Tensor] | None,
+    Dict[str, torch.Tensor],
 ]:
+    """Resample sampling particles toward desirable property values.
 
-    predicted_values: TensorDict = predicted[value_key]
-    predicted_values: torch.Tensor = predicted_values[subvalue_key].squeeze(-1)
-    modifier = (
-        MaxGaussianModifier(mu=mu, sigma=sigma)
-        if maximize
-        else MinGaussianModifier(mu=mu, sigma=sigma)
-    )
-    weights = modifier(predicted_values)
-    assert weights.ndim == 1, "Probability weights must be 1-dimensional"
+    Args:
+        objectives: list of :class:`flowr.models.property_objectives.Objective`.
+            When given, resampling weights come from the weighted geometric mean
+            of per-objective desirabilities (multi-property optimisation). When
+            ``None``, falls back to the single ``value_key``/``subvalue_key``
+            objective described by ``mu``/``sigma``/``maximize``.
+        temperature: softmax temperature on log-desirability. Lower is greedier.
+        ess_threshold: normalised effective sample size below which resampling
+            is triggered. 1.0 resamples every call; 0.0 never resamples.
+        mol_builder_fn: ``predicted -> list[Mol]``, required when any objective
+            has ``source`` in ``{"rdkit", "external"}``.
 
-    weights_softmax = predicted_values.softmax(dim=0)
-    # weights_combined = weights + weights_softmax
-    weights_combined = weights_softmax
+    Returns the re-indexed trajectory state plus a diagnostics dict
+    (``scores``, per-objective ``terms``, ``ess``, ``resampled``, ``n_unique``).
+    """
+
+    # Build the resampling weights.
+    #
+    # Two modes:
+    #   * multi-objective (``objectives`` given) -- weighted geometric mean of
+    #     per-objective desirabilities, tempered by ``temperature``. Objectives
+    #     sourced from RDKit/external models are evaluated on molecules built
+    #     from the clean-endpoint (x1) estimate.
+    #   * single-objective (default) -- the score modifier selected by
+    #     ``maximize`` applied to ``predicted[value_key][subvalue_key]``.
+    #
+    # NOTE: previously the modifier output was computed and then discarded in
+    # favour of a plain softmax over the raw predicted values, which silently
+    # ignored ``mu``/``sigma``/``maximize`` and is not scale-invariant (and so
+    # cannot be extended to several properties). The modifier is now used.
+    if objectives:
+        mols = None
+        if any(obj.source != "head" for obj in objectives):
+            if mol_builder_fn is None:
+                raise ValueError(
+                    "multi-objective guidance with rdkit/external objectives "
+                    "requires mol_builder_fn to build molecules from the "
+                    "clean-endpoint estimate"
+                )
+            mols = mol_builder_fn(predicted)
+        scores, terms = desirability(
+            objectives, predicted, mols=mols, return_terms=True
+        )
+        weights_combined = resampling_weights(scores, temperature=temperature)
+        guidance_info = {
+            "scores": scores.detach(),
+            "terms": {k: v.detach() for k, v in terms.items()},
+            "ess": effective_sample_size(weights_combined).detach(),
+        }
+    else:
+        predicted_values: TensorDict = predicted[value_key]
+        predicted_values: torch.Tensor = predicted_values[subvalue_key].squeeze(-1)
+        modifier = (
+            MaxGaussianModifier(mu=mu, sigma=sigma)
+            if maximize
+            else MinGaussianModifier(mu=mu, sigma=sigma)
+        )
+        scores = modifier(predicted_values)
+        assert scores.ndim == 1, "Probability weights must be 1-dimensional"
+        weights_combined = resampling_weights(scores, temperature=temperature)
+        guidance_info = {
+            "scores": scores.detach(),
+            "terms": {value_key: scores.detach()},
+            "ess": effective_sample_size(weights_combined).detach(),
+        }
+
+    # Only resample when the particle weights have actually degenerated;
+    # resampling every step collapses diversity for no benefit.
+    ess = float(guidance_info["ess"])
+    guidance_info["resampled"] = ess < ess_threshold
+    if not guidance_info["resampled"]:
+        return (
+            predicted,
+            prior,
+            current,
+            pocket_data,
+            pocket_equis,
+            pocket_invs,
+            cond_batch,
+            guidance_info,
+        )
+
     selected_ids = torch.multinomial(
         weights_combined, num_samples=len(weights_combined), replacement=True
     )
+    guidance_info["n_unique"] = int(torch.unique(selected_ids).numel())
 
     prior[value_key] = prior[value_key].to(selected_ids.device)
     prior["docking_score"] = prior["docking_score"].to(selected_ids.device)
@@ -142,6 +223,7 @@ def apply_smc_guidance(
         pocket_equis,
         pocket_invs,
         cond_batch,
+        guidance_info,
     )
     return out
 
@@ -1486,7 +1568,13 @@ class LigandPocketCFM(pl.LightningModule):
         }
         if "affinity" in out:
             predicted["affinity"] = out["affinity"]
-        if "docking" in out:
+        # NOTE: the network emits "docking_score" (see SemlaGenerator.forward);
+        # the previous key "docking" never matched, so docking-score guidance
+        # raised KeyError. Both keys are populated for backwards compatibility.
+        if out.get("docking_score") is not None:
+            predicted["docking_score"] = out["docking_score"]
+            predicted["docking"] = out["docking_score"]
+        elif "docking" in out:
             predicted["docking"] = out["docking"]
         if hybridization_probs is not None:
             predicted["hybridization"] = hybridization_probs
@@ -1620,6 +1708,10 @@ class LigandPocketCFM(pl.LightningModule):
         sigma: float = 2.0,
         maximize: bool = True,
         coord_noise_level: float = 0.2,
+        objectives: list | None = None,
+        guidance_temperature: float = 1.0,
+        guidance_ess_threshold: float = 0.5,
+        guidance_log: list | None = None,
         final_inpaint: bool = False,
         final_corr_pred: bool = True,
         should_cancel=None,
@@ -1802,6 +1894,7 @@ class LigandPocketCFM(pl.LightningModule):
                         pocket_equis,
                         pocket_invs,
                         cond_batch,
+                        guidance_info,
                     ) = apply_smc_guidance(
                         predicted=predicted,
                         prior=prior,
@@ -1815,7 +1908,27 @@ class LigandPocketCFM(pl.LightningModule):
                         mu=mu,
                         sigma=sigma,
                         maximize=maximize,
+                        objectives=objectives,
+                        temperature=guidance_temperature,
+                        ess_threshold=guidance_ess_threshold,
+                        mol_builder_fn=self._mols_from_predicted,
                     )
+                    if guidance_log is not None:
+                        guidance_log.append(
+                            {
+                                "t": float(times[0][0]),
+                                "ess": float(guidance_info["ess"]),
+                                "resampled": bool(guidance_info["resampled"]),
+                                "n_unique": guidance_info.get("n_unique"),
+                                "mean_score": float(
+                                    guidance_info["scores"].mean()
+                                ),
+                                "mean_terms": {
+                                    k: float(v.mean())
+                                    for k, v in guidance_info["terms"].items()
+                                },
+                            }
+                        )
 
                 # Update times for the next step
                 times = self._update_times(
@@ -2357,6 +2470,27 @@ class LigandPocketCFM(pl.LightningModule):
             )
 
         return predicted
+
+    def _mols_from_predicted(self, predicted):
+        """Build RDKit mols from the current clean-endpoint (x1) estimate.
+
+        Used by multi-objective guidance to evaluate RDKit descriptors and
+        external property models mid-trajectory. The network is
+        x1-parameterised, so ``predicted`` is an estimate of the final molecule
+        at every integration step (see ``Integrator._coord_velocity_step``).
+
+        Sanitisation is disabled: an intermediate estimate need not be a valid
+        molecule, and objective functions are expected to return ``nan`` for
+        molecules they cannot score. Coordinates are rescaled by
+        ``self.coord_scale`` to match the units property models expect.
+        """
+        try:
+            return self._generate_mols(
+                predicted, scale=self.coord_scale, sanitise=False
+            )
+        except Exception:
+            batch_size = predicted["coords"].shape[0]
+            return [None] * batch_size
 
     def _generate_mols(self, generated, scale=1.0, sanitise=True, add_hs=False):
         coords = generated["coords"] * scale

@@ -1,0 +1,51 @@
+# Multi-property guidance: bind tightly, stay soluble and permeable.
+#
+#   python -m flowr.gen.generate_from_pdb ... --guidance_config examples/guidance_mpo.yaml
+#
+# Objectives are combined as a weighted GEOMETRIC mean of desirabilities, so an
+# objective near zero desirability vetoes the particle rather than being
+# averaged away by a satisfied one. Weights are exponents: affinity at 2.0
+# counts twice as much as a property at 1.0.
+#
+# Value sources:
+#   value_key/subvalue_key -> a network head (no extra cost)
+#   rdkit: <descriptor>    -> RDKit descriptor on the clean-endpoint estimate
+#   external: <name>       -> a model registered via
+#                             flowr.gen.utils.register_external_property_fn
+#
+# The rdkit entries below are cheap stand-ins that let you exercise the whole
+# pipeline before plugging in trained logS / log Papp models. Swap them for
+# `external:` once your models are registered.
+
+apply_guidance: true
+window_start: 0.0
+window_end: 0.3
+coord_noise_level: 0.2
+
+# Softmax temperature on log-desirability. Lower = greedier, faster diversity
+# collapse. Resampling only fires when the normalised effective sample size
+# drops below ess_threshold (1.0 = every step, 0.0 = never).
+temperature: 1.0
+ess_threshold: 0.5
+
+objectives:
+  - name: affinity
+    value_key: affinity
+    subvalue_key: pic50
+    weight: 2.0
+    # Full credit at pIC50 >= 8, tapering below.
+    modifier: {type: max_gaussian, mu: 8.0, sigma: 1.0}
+
+  - name: solubility
+    # Stand-in: cLogP as an inverse solubility proxy. Full credit below 3,
+    # none above 5. Replace with `external: logs` and a real logS model.
+    rdkit: logp
+    weight: 1.0
+    modifier: {type: clipped, upper_x: 3.0, lower_x: 5.0}
+
+  - name: permeability
+    # Stand-in: TPSA. Full credit below 90 A^2, none above 140.
+    # Replace with `external: logpapp` and a Caco-2 / MDCK model.
+    rdkit: tpsa
+    weight: 1.0
+    modifier: {type: clipped, upper_x: 90.0, lower_x: 140.0}
