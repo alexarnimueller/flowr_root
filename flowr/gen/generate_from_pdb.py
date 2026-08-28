@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 import flowr.gen.utils as util
 import flowr.util.rdkit as smolRD
+from flowr.data.decoration_size import assert_heavy_atom_semantics
 from flowr.data.dataset import GeometricDataset
 from flowr.gen.generate import generate_ligands_per_target
 from flowr.gen.mol_filter import ADMEFilter, MolFilterPipeline, PropertyFilter
@@ -98,6 +99,22 @@ def evaluate(args):
         vocab_hybridization,
         vocab_aromatic,
     )
+
+    # A decoration size is a HEAVY-atom count only when the checkpoint strips
+    # hydrogens; on an all-atom checkpoint the same integer would silently
+    # include explicit Hs. Fail here rather than generate the wrong size.
+    if (
+        getattr(args, "decoration_size", None) is not None
+        or getattr(args, "decoration_size_dist", None) is not None
+    ):
+        assert_heavy_atom_semantics(
+            hparams,
+            flag_name=(
+                "--decoration_size"
+                if getattr(args, "decoration_size", None) is not None
+                else "--decoration_size_dist"
+            ),
+        )
 
     guidance_params = util.get_guidance_params(args)
 
@@ -652,6 +669,33 @@ def get_args():
         type=str,
         default=None,
         help="XYZ file specifying the center for the random prior. The center of mass of all coordinates in the file will be used. Use with --fragment_growing."
+    )
+    parser.add_argument(
+        "--decoration_size",
+        type=int,
+        default=None,
+        help="Number of heavy atoms to ADD, for fragment-conditioned modes such as "
+        "--scaffold_elaboration. Total molecule size becomes n_fixed + this value. "
+        "Without it the budget is the R-group atom count of the reference ligand. "
+        "Required to decorate a bare scaffold, which otherwise falls back to de novo. "
+        "Mutually exclusive with --decoration_size_dist.",
+    )
+    parser.add_argument(
+        "--decoration_size_dist",
+        type=str,
+        default=None,
+        help="Sample the decoration size per molecule from a distribution instead of "
+        "fixing it. Specs: uniform:MIN:MAX | normal:MEAN:STD | poisson:LAMBDA | "
+        "reference:FRAC (reference count +/- fraction) | dataset:NAME "
+        "(crossdocked|plinder|kinodata). Draws are clipped to the dataset size range. "
+        "Mutually exclusive with --decoration_size.",
+    )
+    parser.add_argument(
+        "--fragment_size_variation",
+        type=float,
+        default=0.1,
+        help="Fractional jitter applied to the fragment size when --sample_mol_sizes "
+        "is set. Previously hardcoded to 0.1 and unreachable from the CLI.",
     )
     parser.add_argument("--max_fragment_cuts", type=int, default=3)
     parser.add_argument("--core_growing", action="store_true")

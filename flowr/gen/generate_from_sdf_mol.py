@@ -397,6 +397,28 @@ def get_args():
     parser.add_argument("--sample_n_molecules", type=int, default=None)
     parser.add_argument("--sample_n_molecules_per_mol", type=int, default=None)
     parser.add_argument("--sample_mol_sizes", action="store_true")
+    parser.add_argument(
+        "--decoration_size",
+        type=int,
+        default=None,
+        help="Number of heavy atoms to ADD, for fragment-conditioned modes such as "
+        "--scaffold_elaboration. Total becomes n_fixed + this value. Mutually "
+        "exclusive with --decoration_size_dist.",
+    )
+    parser.add_argument(
+        "--decoration_size_dist",
+        type=str,
+        default=None,
+        help="Sample the decoration size per molecule: uniform:MIN:MAX | "
+        "normal:MEAN:STD | poisson:LAMBDA | reference:FRAC | dataset:NAME. "
+        "Mutually exclusive with --decoration_size.",
+    )
+    parser.add_argument(
+        "--fragment_size_variation",
+        type=float,
+        default=0.1,
+        help="Fractional jitter on fragment size when --sample_mol_sizes is set.",
+    )
 
     # Filtering parameters
     parser.add_argument("--filter_valid_unique", action="store_true")

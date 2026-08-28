@@ -521,6 +521,12 @@ def load_util(
         fragment_inpainting=args.fragment_inpainting,
         fragment_growing=getattr(args, "fragment_growing", False),
         grow_size=getattr(args, "grow_size", None),
+        decoration_size=getattr(args, "decoration_size", None),
+        decoration_size_dist=getattr(args, "decoration_size_dist", None),
+        decoration_size_seed=getattr(args, "seed", None),
+        # NOTE: fragment_size_variation was never forwarded, so --sample_mol_sizes
+        # always used the hardcoded default of 0.1 regardless of intent.
+        fragment_size_variation=getattr(args, "fragment_size_variation", 0.1),
         prior_center=prior_center,
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
@@ -568,11 +574,18 @@ def load_util(
     # Store ring_system_index for core_growing mode
     eval_interpolant.ring_system_index = getattr(args, "ring_system_index", 0)
 
+    # Report the decoration-size policy, so the run log says which of the three
+    # possible budgets is actually in force.
+    if eval_interpolant.decoration_size_sampler is not None:
+        print(eval_interpolant.decoration_size_sampler.describe())
+
     # Print fragment growing configuration once
     if getattr(args, "fragment_growing", False) and getattr(args, "grow_size", None):
         size_info = f"grow_size={args.grow_size}"
         if args.sample_mol_sizes:
-            size_info += " (with ±10% size variation)"
+            # The variation fraction is configurable now, so do not hardcode 10%.
+            frac = getattr(args, "fragment_size_variation", 0.1)
+            size_info += f" (with ±{frac:.0%} size variation)"
         prior_info = (
             f", prior_center_file={args.prior_center_file}"
             if prior_center is not None
