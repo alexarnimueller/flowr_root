@@ -173,10 +173,16 @@ def generate_ligands_per_target(
         guidance_window_start=guidance_params["window_start"],
         guidance_window_end=guidance_params["window_end"],
         value_key=guidance_params["value_key"],
+        # NOTE: subvalue_key was present in the config but never forwarded, so
+        # a config selecting e.g. pkd silently guided on the pic50 default.
+        subvalue_key=guidance_params.get("subvalue_key", "pic50"),
         mu=guidance_params["mu"],
         sigma=guidance_params["sigma"],
         maximize=guidance_params["maximize"],
         coord_noise_level=guidance_params["coord_noise_level"],
+        objectives=guidance_params.get("objectives"),
+        guidance_temperature=guidance_params.get("temperature", 1.0),
+        guidance_ess_threshold=guidance_params.get("ess_threshold", 0.5),
         should_cancel=should_cancel,
     )
 

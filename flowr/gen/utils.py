@@ -1381,7 +1381,52 @@ def get_guidance_params(args) -> Dict[str, Any]:
             "coord_noise_level": 0.2,
         }
 
+    # Defaults for the multi-property path, so callers can index them
+    # unconditionally.
+    guidance_params.setdefault("temperature", 1.0)
+    guidance_params.setdefault("ess_threshold", 0.5)
+    guidance_params.setdefault("objectives", None)
+
+    # Compile an `objectives:` block into Objective instances. External property
+    # models (solubility, permeability, ...) are resolved through
+    # `external_property_fns`, which maps a config name onto a callable
+    # `list[Mol] -> Tensor`. Register yours before calling this, e.g.
+    #
+    #   from flowr.gen import utils
+    #   utils.register_external_property_fn("logs", my_logs_model)
+    #
+    # RDKit-backed objectives (`rdkit: tpsa`) need no registration.
+    if guidance_params.get("objectives"):
+        from flowr.models.property_objectives import objectives_from_config
+
+        guidance_params["objectives"] = objectives_from_config(
+            guidance_params["objectives"],
+            external_fns=EXTERNAL_PROPERTY_FNS,
+        )
+        names = [obj.name for obj in guidance_params["objectives"]]
+        print(f"Multi-objective guidance active over: {', '.join(names)}")
+
     return guidance_params
+
+
+# Registry of external property models usable as guidance objectives.
+# Maps the name used in a guidance config onto `list[Mol] -> Tensor`.
+EXTERNAL_PROPERTY_FNS: Dict[str, Any] = {}
+
+
+def register_external_property_fn(name: str, fn) -> None:
+    """Register an external property model for use in a guidance config.
+
+    Args:
+        name: the value referenced by ``external:`` in an objective spec.
+        fn: callable mapping a list of RDKit molecules to a 1-D tensor (or
+            sequence) of predicted values, one per molecule. Return ``nan`` for
+            molecules that cannot be scored; they are treated as
+            zero-desirability rather than propagating NaNs.
+    """
+    if not callable(fn):
+        raise TypeError(f"external property fn '{name}' must be callable")
+    EXTERNAL_PROPERTY_FNS[name] = fn
 
 
 def optimize_molecule_xtb(mol, temp_dir):

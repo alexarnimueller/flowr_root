@@ -209,6 +209,30 @@ def evaluate(args):
                     f"Substructure match rate: {round(len(gen_ligs) / num_sampled, 2)}"
                 )
 
+            # Filter by molecular properties / ADME models.
+            # NOTE: this must run BEFORE the molecules are appended to
+            # all_gen_ligs -- previously it ran afterwards and only rebound the
+            # local `gen_ligs`, so the pass rate was reported while the
+            # unfiltered molecules were kept.
+            if mol_filter_pipeline.active:
+                num_before = len(gen_ligs)
+                kept = mol_filter_pipeline(gen_ligs)
+                if gen_pdbs:
+                    # Keep pockets aligned with their ligands. The pipeline
+                    # returns a subset of the same objects, so match on identity.
+                    kept_ids = {id(mol) for mol in kept}
+                    keep_idx = [
+                        i for i, mol in enumerate(gen_ligs) if id(mol) in kept_ids
+                    ]
+                    gen_ligs = [gen_ligs[i] for i in keep_idx]
+                    gen_pdbs = [gen_pdbs[i] for i in keep_idx]
+                else:
+                    gen_ligs = kept
+                print(
+                    f"Property/ADME filter pass rate: "
+                    f"{round(len(gen_ligs) / max(num_before, 1), 2)}"
+                )
+
             # Add to global ligand list
             all_gen_ligs.extend(gen_ligs)
             if gen_pdbs:
@@ -226,15 +250,6 @@ def evaluate(args):
                         all_gen_ligs, threshold=args.diversity_threshold
                     )
                 print(f"Diversity rate: {round(len(all_gen_ligs) / n_ligands, 2)}")
-
-            # Filter by molecular properties / ADME models
-            if mol_filter_pipeline.active:
-                num_before = len(gen_ligs)
-                gen_ligs = mol_filter_pipeline(gen_ligs)
-                print(
-                    f"Property/ADME filter pass rate: "
-                    f"{round(len(gen_ligs) / max(num_before, 1), 2)}"
-                )
 
             # Update number of generated ligands
             num_ligands = len(all_gen_ligs)
