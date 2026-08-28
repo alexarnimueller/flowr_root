@@ -1,0 +1,76 @@
+# Factor Xa: bind tightly, stay soluble and permeable.
+#
+# Target pocket: PDB 2P16 (human factor Xa co-crystallised with apixaban,
+# X-ray, 2.3 A) -- the reference ligand is the bound ligand, so the pocket and
+# the property anchors come from the same structure.
+#
+# Desirability windows are anchored on the three approved direct FXa
+# inhibitors. IMPORTANT: the windows below are calibrated for
+# uncertainty_penalty=1.0, because that is what the objective actually sees.
+# The penalty subtracts one ensemble standard deviation, which shifts every
+# prediction down -- so windows calibrated on raw predictions would score the
+# approved drugs at only ~0.5 desirability and the guidance would be chasing a
+# target no real drug can reach.
+#
+#     drug          logS (raw / penalised)   log Papp (raw / penalised)
+#     apixaban        -4.06  /  -5.02          -5.12  /  -5.54
+#     rivaroxaban     -3.89  /  -5.04          -5.09  /  -5.56
+#     edoxaban        -4.61  /  -6.45          -5.33  /  -5.82
+#
+# If you set uncertainty_penalty=0.0, use these windows instead:
+#     solubility   {upper_x: -3.89, lower_x: -6.14}
+#     permeability {upper_x: -5.09, lower_x: -6.25}
+#
+# Each window gives full credit at the best approved-drug value and zero below
+# a margin set by the property model's error (MAE 0.85 for logS, 0.36 for
+# log Papp), so the objective cannot demand precision the surrogate does not
+# have. Against the 5893 ChEMBL factor Xa compounds with affinity labels, the
+# approved drugs beat 66% of the series on solubility and 86% on permeability,
+# which is the gap this guidance is meant to close.
+#
+# Setup (registers the trained predictors before generation):
+#
+#     from flowr.gen import utils
+#     from flowr.models.admet_predictors import load_admet_predictors
+#     for key, fn in load_admet_predictors(
+#             "fxa_admet_models.pkl", uncertainty_penalty=1.0).items():
+#         utils.register_external_property_fn(key, fn)
+#
+#     python -m flowr.gen.generate_from_pdb \
+#         --pdb_file 2p16.pdb --ligand_file apixaban.sdf \
+#         --guidance_config examples/guidance_fxa_mpo.yaml
+#
+# uncertainty_penalty=1.0 subtracts one ensemble standard deviation from each
+# prediction, so molecules the model is unsure about are treated pessimistically
+# rather than being rewarded for being out of distribution.
+
+apply_guidance: true
+window_start: 0.0
+window_end: 0.3
+coord_noise_level: 0.2
+
+temperature: 1.0
+ess_threshold: 0.5
+
+objectives:
+  - name: affinity
+    value_key: affinity
+    subvalue_key: pic50
+    weight: 2.0
+    # Approved FXa inhibitors sit at pKi 9-10; ChEMBL medians for the series
+    # are lower, so full credit from 9 upward.
+    modifier: {type: max_gaussian, mu: 9.0, sigma: 1.0}
+
+  - name: solubility
+    external: logS
+    weight: 1.0
+    # Full credit at apixaban/rivaroxaban's penalised -5.02; zero below -7.30
+    # (worst approved drug minus ~1 x MAE). AqSolDB units are log mol/L.
+    modifier: {type: clipped, upper_x: -5.02, lower_x: -7.30}
+
+  - name: permeability
+    external: logPapp
+    weight: 1.0
+    # Full credit at apixaban's penalised -5.54; zero below -6.90 (worst
+    # approved drug minus ~3 x MAE). Caco2_Wang units are log cm/s.
+    modifier: {type: clipped, upper_x: -5.54, lower_x: -6.90}

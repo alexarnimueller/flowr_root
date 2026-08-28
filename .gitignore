@@ -53,3 +53,7 @@ oe_license.txt
 code_to_pdf.py
 flowr_code.pdf
 flowr_code.html
+
+# Trained ADMET model bundle (18 MB) - distribute separately, see
+# examples/guidance_fxa_mpo.yaml for how to regenerate or point at your own.
+fxa_admet_models.pkl
