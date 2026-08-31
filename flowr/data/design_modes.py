@@ -293,6 +293,39 @@ def build_mask_from_query(
     return build_mask(mol, mode, region_mask=region)
 
 
+#: Every flag that turns on a fragment-conditioned mode. Code asking "is any
+#: conditional mode active?" must consult this rather than hand-listing modes:
+#: fifteen such OR-chains existed across scriptutil, gen/utils, fm_pocket and
+#: fm_mol, and adding substructure_replacement without updating all of them left
+#: the mode's atom budget silently ignored (realised size fell back to the
+#: reference's own count) because one chain gates the inpainting path itself.
+CONDITIONING_FLAGS = (
+    "scaffold_decoration",
+    "scaffold_elaboration",  # checkpoint-era name for scaffold_decoration
+    "scaffold_hopping",
+    "substructure_inpainting",
+    "substructure_replacement",
+    "fragment_growing",
+    "interaction_conditional",
+)
+
+
+def any_mode_active(source, extra_flags=()) -> bool:
+    """True when any fragment-conditioned mode is enabled on ``source``.
+
+    Args:
+        source: An argparse namespace or any object carrying the mode flags.
+        extra_flags: Additional attribute names to include in the test.
+
+    Returns:
+        Whether conditioning is active at all. Reads every flag in
+        :data:`CONDITIONING_FLAGS`, so a newly added mode is picked up by all
+        call sites at once instead of needing each OR-chain updated by hand.
+    """
+    names = tuple(CONDITIONING_FLAGS) + tuple(extra_flags)
+    return any(bool(getattr(source, name, False)) for name in names)
+
+
 def describe_mask(mode: str, mask: torch.Tensor) -> str:
     """One-line summary for the run log, naming which atoms are held."""
     n_fixed = int(mask.sum())

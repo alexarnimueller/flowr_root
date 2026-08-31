@@ -434,6 +434,7 @@ class LigandPocketCFM(pl.LightningModule):
         core_growing: bool = False,
         linker_inpainting: bool = False,
         substructure_inpainting: bool = False,
+        substructure_replacement: bool = False,
         graph_inpainting: bool = False,
         use_is_fixed_embed: bool = False,
         corrector_iters: int = None,
@@ -563,6 +564,7 @@ class LigandPocketCFM(pl.LightningModule):
         self.core_growing = core_growing
         self.linker_inpainting = linker_inpainting
         self.substructure_inpainting = substructure_inpainting
+        self.substructure_replacement = substructure_replacement
         self.corrector_iters = corrector_iters
         self.use_t_loss_weights = use_t_loss_weights
         self.train_mols = train_mols
@@ -580,6 +582,7 @@ class LigandPocketCFM(pl.LightningModule):
             or self.scaffold_hopping
             or self.linker_inpainting
             or self.substructure_inpainting
+            or getattr(self, "substructure_replacement", False)
             or self.fragment_inpainting
             or self.fragment_growing
             or self.core_growing

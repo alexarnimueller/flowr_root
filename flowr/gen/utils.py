@@ -10,6 +10,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 import lightning as L
 import numpy as np
 import torch
+
+from flowr.data import design_modes
 import yaml
 from pymol import cmd
 from rdkit import Chem
@@ -190,40 +192,39 @@ class dotdict(dict):
 
 
 def get_conditional_mode(args):
-    return (
-        "scaffold_hopping"
-        if args.scaffold_hopping
-        else (
-            "scaffold_elaboration"
-            if getattr(args, "scaffold_decoration", False)
-            else (
-                "linker_inpainting"
-                if False
-                else (
-                    "core_growing"
-                    if False
-                    else (
-                        "fragment_growing"
-                        if getattr(args, "fragment_growing", False)
-                        else (
-                            "fragment_inpainting"
-                            if False
-                            else (
-                                "substructure_inpainting"
-                                if args.substructure_inpainting
-                                else (
-                                    "interaction_conditional"
-                                    if args.interaction_conditional
-                                    else None
-                                )
-                            )
-                        )
-                    )
-                )
-            )
-        )
-    )
+    """Return the active conditioning mode, or None for unconditional runs.
 
+    Driven by design_modes.CONDITIONING_FLAGS rather than a hand-written
+    ternary chain. The chain this replaced never mentioned
+    substructure_replacement, so that mode resolved to None -- meaning "no
+    conditioning" -- and generated unconditional molecules at the reference's
+    own size with 0/4 substructure retention, while masks and the atom budget
+    were computed correctly upstream. A mode missing from this function is a
+    mode that silently does nothing.
+
+    Returns the interpolant-level mode string, which is not always the flag
+    name: both substructure modes share the "substructure_inpainting" code path
+    and differ only in polarity, and scaffold_decoration is still called
+    scaffold_elaboration internally because checkpoints store that name.
+    """
+    # Highest priority first; interaction conditioning is orthogonal and last.
+    dispatch = [
+        ("scaffold_hopping", "scaffold_hopping"),
+        ("scaffold_decoration", "scaffold_elaboration"),
+        ("scaffold_elaboration", "scaffold_elaboration"),
+        ("fragment_growing", "fragment_growing"),
+        ("substructure_inpainting", "substructure_inpainting"),
+        ("substructure_replacement", "substructure_inpainting"),
+        ("interaction_conditional", "interaction_conditional"),
+    ]
+    known = {flag for flag, _ in dispatch}
+    missing = set(design_modes.CONDITIONING_FLAGS) - known
+    assert not missing, f"conditioning flags absent from dispatch: {sorted(missing)}"
+
+    for flag, mode in dispatch:
+        if getattr(args, flag, False):
+            return mode
+    return None
 
 def filter_substructure(
     gen_ligs: list[Chem.Mol],
@@ -551,6 +552,7 @@ def load_util(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
             or False
         )
@@ -561,6 +563,7 @@ def load_util(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
             or False
         )
@@ -702,6 +705,7 @@ def load_util_mol(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
             or False
         )
@@ -712,6 +716,7 @@ def load_util_mol(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
             or False
         )

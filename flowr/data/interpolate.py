@@ -2071,10 +2071,21 @@ class GeometricInterpolant(Interpolant):
             )
         self.substructure_query_format = substructure_query_format
         self.substructure_first_match_only = substructure_first_match_only
-        if substructure_inpainting:
+        # Always define the attribute: _determine_modes_and_extract_masks reads
+        # self.substructure unconditionally, and leaving it unset raised
+        # AttributeError for substructure_replacement, which previously only
+        # went unnoticed because the master inpainting gate skipped that path
+        # entirely.
+        self.substructure = None
+        if substructure_inpainting or substructure_replacement:
             if substructure is None:
+                mode_name = (
+                    "substructure_replacement"
+                    if substructure_replacement
+                    else "substructure_inpainting"
+                )
                 raise ValueError(
-                    "substructure_inpainting=True requires --substructure "
+                    f"{mode_name}=True requires --substructure "
                     "(a SMARTS/SMILES pattern or a list of atom indices)."
                 )
             if len(substructure) == 1 and isinstance(substructure[0], str):
@@ -2097,12 +2108,24 @@ class GeometricInterpolant(Interpolant):
         self.vocab = vocab
         self.vocab_charges = vocab_charges
         self.vocab_hybridization = vocab_hybridization
+        # Master gate: when False, interpolate() routes everything to
+        # _interpolate_standard and NO mask/budget code runs at all, so a mode
+        # missing from this list generates unconditionally while every upstream
+        # stage still computes the right mask. That is exactly how
+        # substructure_replacement failed: masks were correct, the atom budget
+        # was drawn correctly, and the output was nonetheless unconditional at
+        # the reference's own size with zero substructure retention.
+        #
+        # This reads constructor parameters rather than self attributes, which
+        # is why it is easy to miss when auditing for self.<flag> references.
         self.inpainting_mode = (
             scaffold_hopping
             or scaffold_elaboration
+            or scaffold_decoration
             or linker_inpainting
             or core_growing
             or substructure_inpainting
+            or substructure_replacement
             or fragment_inpainting
             or fragment_growing
         )

@@ -807,7 +807,8 @@ def build_model(
             or False
             or False
             or args.fragment_growing
-            or args.substructure_inpainting,
+            or args.substructure_inpainting
+            or args.substructure_replacement,
             self_cond=args.self_condition,
             sc_charges=getattr(args, "sc_charges", False),
             sc_distance_edges=getattr(args, "sc_distance_edges", False),
@@ -874,7 +875,8 @@ def build_model(
             or False
             or False
             or args.fragment_growing
-            or args.substructure_inpainting,
+            or args.substructure_inpainting
+            or args.substructure_replacement,
             self_cond=args.self_condition,
             sc_charges=getattr(args, "sc_charges", False),
             sc_distance_edges=getattr(args, "sc_distance_edges", False),
@@ -1027,6 +1029,7 @@ def build_model(
         fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         substructure_inpainting=args.substructure_inpainting,
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         graph_inpainting=args.graph_inpainting is not None,
         mixed_uncond_inpaint=args.mixed_uncond_inpaint,
         use_t_loss_weights=args.use_t_loss_weights,
@@ -1887,7 +1890,8 @@ def build_mol_model(
         or False
         or False
         or args.fragment_growing
-        or args.substructure_inpainting,
+        or args.substructure_inpainting
+        or args.substructure_replacement,
         self_cond=args.self_condition,
         sc_charges=getattr(args, "sc_charges", False),
         coord_skip_connect=not args.no_coord_skip_connect,
@@ -2007,6 +2011,7 @@ def build_mol_model(
         fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         substructure_inpainting=args.substructure_inpainting,
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         graph_inpainting=args.graph_inpainting is not None,
         mixed_uncond_inpaint=args.mixed_uncond_inpaint,
         use_t_loss_weights=args.use_t_loss_weights,
@@ -2083,7 +2088,8 @@ def build_mol_mean_flow_model(
         or False
         or False
         or args.fragment_growing
-        or args.substructure_inpainting,
+        or args.substructure_inpainting
+        or args.substructure_replacement,
         self_cond=args.self_condition,
         sc_charges=getattr(args, "sc_charges", False),
         coord_skip_connect=not args.no_coord_skip_connect,
@@ -2221,6 +2227,7 @@ def build_mol_mean_flow_model(
         fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         substructure_inpainting=args.substructure_inpainting,
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         graph_inpainting=args.graph_inpainting is not None,
         mixed_uncond_inpaint=args.mixed_uncond_inpaint,
         use_t_loss_weights=args.use_t_loss_weights,
@@ -2708,6 +2715,7 @@ def build_dm(
         scaffold_hopping=args.scaffold_hopping,
         scaffold_elaboration=getattr(args, "scaffold_decoration", False),
         substructure_inpainting=args.substructure_inpainting,
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         substructure=args.substructure,
         linker_inpainting=False,  # mode removed
         core_growing=False,  # mode removed
@@ -2783,6 +2791,7 @@ def build_dm(
         fragment_growing=args.fragment_growing,
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         substructure=args.substructure,
         graph_inpainting=args.graph_inpainting,
         graph_inpainting_prob=getattr(args, "graph_inpainting_prob", 0.15),
@@ -2797,6 +2806,7 @@ def build_dm(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
             or args.interaction_conditional
             or False
@@ -2808,6 +2818,7 @@ def build_dm(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
             or args.interaction_conditional
             or False
@@ -2969,6 +2980,7 @@ def load_dm(
             scaffold_hopping=args.scaffold_hopping,
             scaffold_elaboration=getattr(args, "scaffold_decoration", False),
             substructure_inpainting=args.substructure_inpainting,
+            substructure_replacement=getattr(args, "substructure_replacement", False),
             substructure=args.substructure,
             linker_inpainting=False,  # mode removed
             core_growing=False,  # mode removed
@@ -3037,6 +3049,7 @@ def load_dm(
         fragment_growing=args.fragment_growing,
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         substructure=args.substructure,
         graph_inpainting=args.graph_inpainting,
         graph_inpainting_prob=getattr(args, "graph_inpainting_prob", 0.15),
@@ -3056,6 +3069,7 @@ def load_dm(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
             or False
         )
@@ -3066,6 +3080,7 @@ def load_dm(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
             or False
         )
@@ -3458,6 +3473,7 @@ def build_mol_dm(
         scaffold_hopping=args.scaffold_hopping,
         scaffold_elaboration=getattr(args, "scaffold_decoration", False),
         substructure_inpainting=args.substructure_inpainting,
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         substructure=args.substructure,
         linker_inpainting=False,  # mode removed
         fragment_inpainting=False,  # mode removed
@@ -3499,6 +3515,7 @@ def build_mol_dm(
         scaffold_hopping=args.scaffold_hopping,
         scaffold_elaboration=getattr(args, "scaffold_decoration", False),
         substructure_inpainting=args.substructure_inpainting,
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         substructure=args.substructure,
         linker_inpainting=False,  # mode removed
         fragment_inpainting=False,  # mode removed
@@ -3522,6 +3539,7 @@ def build_mol_dm(
             or args.fragment_growing
             or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
+            or args.substructure_replacement
             or args.scaffold_hopping
         )
         and args.permutation_alignment,
