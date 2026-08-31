@@ -575,12 +575,115 @@ def extract_fragments(
         ]
 
 
+QUERY_FORMATS = ("auto", "smarts", "smiles")
+
+
+def parse_substructure_query(
+    query: str, query_format: str = "auto", target: Optional[Chem.Mol] = None
+):
+    """Parse a substructure query into a query molecule.
+
+    SMARTS is the primary format: a chemist defining a scaffold wants ring-size
+    constraints, wildcards, recursive exclusions and explicit aromaticity, none
+    of which survive SMILES parsing. ``Chem.MolFromSmiles`` returns None for
+    every SMARTS-only construct (``[c,n;r5]``, ``[R2]``, ``C(=O)[NX3;H2]``),
+    which previously produced a silently EMPTY mask and degraded the run to
+    unconditional generation.
+
+    A pure SMARTS switch is not safe on its own, though: aromatics written in
+    Kekule form are valid SMILES but do not match an aromatic target as SMARTS,
+    because SMARTS ``C`` means aliphatic carbon. ``O=C1NCCc2c1[nH]nc2`` matches
+    once as SMILES and zero times as SMARTS. So ``auto`` tries SMARTS first and
+    falls back to SMILES only when SMARTS yields no usable query, and the
+    resolution is always logged rather than inferred.
+
+    Parsing success is not a sufficient test in ``auto`` mode. A Kekule-written
+    aromatic such as ``O=C1NCCc2c1[nH]nc2`` parses cleanly as SMARTS and then
+    matches nothing, because SMARTS ``C`` means aliphatic carbon. Falling back
+    only on a parse error would therefore still break existing SMILES callers,
+    so when a target molecule is supplied ``auto`` prefers the interpretation
+    that actually matches it.
+
+    Args:
+        query: SMARTS or SMILES pattern.
+        query_format: One of ``auto`` (SMARTS preferred, SMILES as fallback),
+            ``smarts``, or ``smiles``. Explicit values never fall back, so a
+            typo surfaces as an error instead of matching something unintended.
+        target: Optional molecule used to disambiguate in ``auto`` mode. Without
+            it, ``auto`` returns the SMARTS interpretation whenever it parses.
+
+    Returns:
+        (query_mol | None, format_used | None)
+    """
+    if query_format not in QUERY_FORMATS:
+        raise ValueError(
+            f"query_format must be one of {QUERY_FORMATS}, got {query_format!r}"
+        )
+
+    def _try(fmt):
+        parser = Chem.MolFromSmarts if fmt == "smarts" else Chem.MolFromSmiles
+        try:
+            q = parser(query)
+        except Exception:
+            return None
+        return q if (q is not None and q.GetNumAtoms() > 0) else None
+
+    def _n_matches(q):
+        if target is None or q is None:
+            return None
+        try:
+            return len(target.GetSubstructMatches(q))
+        except Exception:
+            return 0
+
+    if query_format in ("smarts", "smiles"):
+        q = _try(query_format)
+        return (q, query_format) if q is not None else (None, None)
+
+    q_sma, q_smi = _try("smarts"), _try("smiles")
+    if target is None:
+        if q_sma is not None:
+            return q_sma, "smarts"
+        return (q_smi, "smiles") if q_smi is not None else (None, None)
+
+    # SMARTS wins ties and is tried first; SMILES is used only when SMARTS
+    # matches nothing and SMILES does.
+    n_sma, n_smi = _n_matches(q_sma), _n_matches(q_smi)
+    if q_sma is not None and n_sma:
+        return q_sma, "smarts"
+    if q_smi is not None and n_smi:
+        return q_smi, "smiles"
+    if q_sma is not None:
+        return q_sma, "smarts"
+    return (q_smi, "smiles") if q_smi is not None else (None, None)
+
+
 def extract_substructure(
     to_mols: list[Chem.Mol],
     substructure_query: str,
-    use_smarts: bool = False,
+    query_format: str = "auto",
+    use_smarts: bool | None = None,
     invert_mask: bool = False,
+    first_match_only: bool = False,
 ):
+    """Build a fixed-atom mask from a substructure query.
+
+    Args:
+        to_mols: Reference molecules to match against.
+        substructure_query: SMARTS/SMILES pattern, or a list of atom indices.
+        query_format: See :func:`parse_substructure_query`. Defaults to
+            ``auto`` (SMARTS first).
+        use_smarts: Deprecated. ``True`` maps to ``query_format='smarts'`` and
+            ``False`` to ``'auto'`` -- NOT to ``'smiles'``, since the old
+            default silently discarded every SMARTS-only query.
+        invert_mask: Mark the complement of the matched atoms.
+        first_match_only: Mark only the first match. A symmetric or generic
+            query can match many times (``[R2]`` matches every fusion atom),
+            which would fix far more of the molecule than intended.
+    """
+    if use_smarts is not None:
+        query_format = "smarts" if use_smarts else "auto"
+
     def substructure_per_mol(mol, substructure_query):
         mask = torch.zeros(mol.GetNumAtoms(), dtype=bool)
         _mol = Chem.Mol(mol)
@@ -589,25 +692,47 @@ def extract_substructure(
                 "Substructure could not be extracted as reference molecule could not be sanitized. Skipping."
             )
             return mask
-        if use_smarts:
-            substructure = Chem.MolFromSmarts(substructure_query)
-        else:
-            substructure = Chem.MolFromSmiles(substructure_query)
-        if substructure is None or substructure.GetNumAtoms() == 0:
+        substructure, fmt = parse_substructure_query(
+            substructure_query, query_format=query_format, target=mol
+        )
+        if substructure is None:
             print(
-                "Substructure could not be extracted from the reference molecule. Skipping."
+                f"Substructure query {substructure_query!r} could not be parsed as "
+                f"{'SMARTS or SMILES' if query_format == 'auto' else query_format.upper()}. Skipping."
             )
             return mask
         substructure_atoms = ()
-        if mol.HasSubstructMatch(
-            substructure
-        ):  # TODO: handle the case where multiple substructures are present
-            try:
-                substructure_atoms = mol.GetSubstructMatches(substructure)
-            except Exception as e:
-                print(e)
-        if len(substructure_atoms) > 0:
-            mask[torch.tensor(substructure_atoms)] = 1
+        try:
+            substructure_atoms = mol.GetSubstructMatches(substructure)
+        except Exception as e:
+            print(e)
+        if len(substructure_atoms) == 0:
+            # Distinguish "did not match" from "did not parse": both used to
+            # produce the same empty mask, so a valid-but-wrong query looked
+            # identical to a syntax error.
+            print(
+                f"Substructure query {substructure_query!r} parsed as {fmt.upper()} "
+                f"but matched no atoms in the reference molecule. Skipping."
+            )
+            return mask
+        if first_match_only and len(substructure_atoms) > 1:
+            print(
+                f"Substructure query matched {len(substructure_atoms)} times; "
+                "keeping the first match (first_match_only=True)."
+            )
+            substructure_atoms = substructure_atoms[:1]
+        elif len(substructure_atoms) > 1:
+            print(
+                f"Substructure query matched {len(substructure_atoms)} times; "
+                "fixing the union of all matches. Pass first_match_only=True "
+                "to keep only the first."
+            )
+        flat = sorted({i for match in substructure_atoms for i in match})
+        mask[torch.tensor(flat)] = 1
+        print(
+            f"Substructure query parsed as {fmt.upper()}, fixing "
+            f"{len(flat)}/{mol.GetNumAtoms()} atoms."
+        )
         return mask
 
     def substructure_per_mol_list(mol, substructure_atoms):
@@ -1832,6 +1957,8 @@ class GeometricInterpolant(Interpolant):
         prior_center: Optional[torch.Tensor] = None,
         substructure_inpainting: bool = False,
         substructure: Optional[str] = None,
+        substructure_query_format: str = "auto",
+        substructure_first_match_only: bool = False,
         graph_inpainting: str | None = None,
         graph_inpainting_prob: float = 0.15,
         skip_ot_for_graph_inpainting: bool = True,
@@ -1916,9 +2043,22 @@ class GeometricInterpolant(Interpolant):
         self.fragment_modes = None  # ["single", "multi-2", "multi-3"]
         self.max_fragment_cuts = max_fragment_cuts
         self.substructure_inpainting = substructure_inpainting
+        # SMARTS is the primary query language; see parse_substructure_query.
+        if substructure_query_format not in QUERY_FORMATS:
+            raise ValueError(
+                f"substructure_query_format must be one of {QUERY_FORMATS}, "
+                f"got {substructure_query_format!r}"
+            )
+        self.substructure_query_format = substructure_query_format
+        self.substructure_first_match_only = substructure_first_match_only
         if substructure_inpainting:
+            if substructure is None:
+                raise ValueError(
+                    "substructure_inpainting=True requires --substructure "
+                    "(a SMARTS/SMILES pattern or a list of atom indices)."
+                )
             if len(substructure) == 1 and isinstance(substructure[0], str):
-                # Single SMILES/SMARTS string
+                # Single SMARTS/SMILES string
                 self.substructure = substructure[0]
             else:
                 # List of atom indices
@@ -2964,6 +3104,10 @@ class GeometricInterpolant(Interpolant):
                 mask = extract_substructure(
                     [rdkit_mols[i]],
                     substructure_query=self.substructure,
+                    query_format=getattr(self, "substructure_query_format", "auto"),
+                    first_match_only=getattr(
+                        self, "substructure_first_match_only", False
+                    ),
                     invert_mask=False,
                 )[0]
             elif mode == "interaction_conditional":
