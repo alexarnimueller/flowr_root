@@ -88,7 +88,10 @@ python -m flowr.gen.generate_from_sdf_mol \
     --filter_diversity \
     --diversity_threshold 0.9 \
     --add_hs_gen_mols \
-    --substructure_inpainting \
+    # These atom indices are the ones to CHANGE, so the mode is now
+    # substructure_replacement. Under the unified semantics
+    # --substructure_inpainting KEEPS the named atoms instead.
+    --substructure_replacement \
     --substructure 21 23 30 31 32 33 34 35 \
     --filter_cond_substructure \
     # --calculate_strain_energies \
@@ -97,11 +100,11 @@ python -m flowr.gen.generate_from_sdf_mol \
     # --use_sde_simulation \
     # --sample_mol_sizes \
     # --scaffold_hopping \
-    # --scaffold_elaboration \
-    # --fragment_inpainting \
+    # --scaffold_decoration \
+    # --fragment_inpainting was removed; use --substructure_replacement --substructure '<SMARTS>'
     # --fragment_growing \
     # --scaffold_hopping \
-    # --scaffold_elaboration \
+    # --scaffold_decoration \
     # --substructure_inpainting \
     # --substructure 0 2 8 9 10 11 12 13 23 24 25 26 27 28 29 \
     # --filter_cond_substructure \
