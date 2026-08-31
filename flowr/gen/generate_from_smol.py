@@ -68,8 +68,8 @@ def load_model(args):
     hparams["sampling_strategy"] = args.ode_sampling_strategy
     hparams["interaction_conditional"] = args.interaction_conditional
     hparams["scaffold_hopping"] = args.scaffold_hopping
-    hparams["scaffold_elaboration"] = args.scaffold_elaboration
-    hparams["linker_inpainting"] = args.linker_inpainting
+    hparams["scaffold_elaboration"] = getattr(args, "scaffold_decoration", False)
+    hparams["linker_inpainting"] = False
     hparams["data_path"] = args.data_path
     hparams["save_dir"] = args.save_dir
     hparams["predict_affinity"] = hparams.get("predict_affinity", False)
@@ -338,9 +338,9 @@ def load_util(
         flow_interactions=hparams["flow_interactions"],
         interaction_conditional=args.interaction_conditional,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
-        linker_inpainting=args.linker_inpainting,
-        fragment_inpainting=args.fragment_inpainting,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
+        linker_inpainting=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=getattr(args, "fragment_growing", False),
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,

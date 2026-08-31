@@ -195,19 +195,19 @@ def get_conditional_mode(args):
         if args.scaffold_hopping
         else (
             "scaffold_elaboration"
-            if args.scaffold_elaboration
+            if getattr(args, "scaffold_decoration", False)
             else (
                 "linker_inpainting"
-                if args.linker_inpainting
+                if False
                 else (
                     "core_growing"
-                    if args.core_growing
+                    if False
                     else (
                         "fragment_growing"
                         if getattr(args, "fragment_growing", False)
                         else (
                             "fragment_inpainting"
-                            if args.fragment_inpainting
+                            if False
                             else (
                                 "substructure_inpainting"
                                 if args.substructure_inpainting
@@ -515,10 +515,10 @@ def load_util(
         flow_interactions=hparams["flow_interactions"],
         interaction_conditional=args.interaction_conditional,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
-        linker_inpainting=args.linker_inpainting,
-        core_growing=args.core_growing,
-        fragment_inpainting=args.fragment_inpainting,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
+        linker_inpainting=False,  # mode removed
+        core_growing=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=getattr(args, "fragment_growing", False),
         grow_size=getattr(args, "grow_size", None),
         decoration_size=getattr(args, "decoration_size", None),
@@ -531,6 +531,9 @@ def load_util(
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
         substructure=args.substructure,
+        scaffold=getattr(args, "scaffold", None),
+        scaffold_decoration=getattr(args, "scaffold_decoration", False),
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         substructure_query_format=getattr(args, "substructure_query_format", "auto"),
         substructure_first_match_only=getattr(
             args, "substructure_first_match_only", False
@@ -543,23 +546,23 @@ def load_util(
         vocab_hybridization=vocab_hybridization,
         batch_ot=False,
         rotation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
-            or args.core_growing
+            or False
         )
         and args.rotation_alignment,
         permutation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
-            or args.core_growing
+            or False
         )
         and args.permutation_alignment,
         anisotropic_prior=getattr(args, "anisotropic_prior", False),
@@ -671,14 +674,17 @@ def load_util_mol(
         type_interpolation=categorical_interpolation,
         bond_interpolation=categorical_interpolation,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
-        linker_inpainting=args.linker_inpainting,
-        core_growing=args.core_growing,
-        fragment_inpainting=args.fragment_inpainting,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
+        linker_inpainting=False,  # mode removed
+        core_growing=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=getattr(args, "fragment_growing", False),
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
         substructure=args.substructure,
+        scaffold=getattr(args, "scaffold", None),
+        scaffold_decoration=getattr(args, "scaffold_decoration", False),
+        substructure_replacement=getattr(args, "substructure_replacement", False),
         substructure_query_format=getattr(args, "substructure_query_format", "auto"),
         substructure_first_match_only=getattr(
             args, "substructure_first_match_only", False
@@ -691,23 +697,23 @@ def load_util_mol(
         vocab_hybridization=vocab_hybridization,
         batch_ot=False,
         rotation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
-            or args.core_growing
+            or False
         )
         and args.rotation_alignment,
         permutation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
-            or args.core_growing
+            or False
         )
         and args.permutation_alignment,
         anisotropic_prior=getattr(args, "anisotropic_prior", False),
