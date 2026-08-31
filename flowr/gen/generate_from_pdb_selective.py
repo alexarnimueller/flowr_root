@@ -243,6 +243,11 @@ def evaluate(args):
         f"\n Run time={round(run_time, 2)}s for {len(out_dict['gen_ligs'])} molecules \n"
     )
 
+    # Report the decoration sizes actually drawn, not just the configured
+    # policy: the config line appears whenever a sampler exists, even when
+    # generation took the unconditional path and ignored the budget.
+    util.report_realised_decoration_sizes(interpolant)
+
     # Filter by diversity
     print("Filtering ligands by diversity...")
     if args.arch == "pocket_flex":

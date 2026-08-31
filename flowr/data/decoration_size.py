@@ -89,6 +89,9 @@ class DecorationSizeSampler:
                 f"expected one of {', '.join(KINDS)}"
             )
         self._rng = np.random.default_rng(self.seed)
+        # Draws actually made, so the run log can report the realised budget
+        # rather than only the configured intent. See realised_report().
+        self._draws: list[int] = []
 
     # ------------------------------------------------------------------ parsing
 
@@ -283,13 +286,28 @@ class DecorationSizeSampler:
 
         lo, hi = self.bounds(n_fixed)
         sizes = np.clip(np.rint(raw), lo, hi).astype(int)
-        return [int(s) for s in sizes]
+        out = [int(s) for s in sizes]
+        self._draws.extend(out)
+        return out
 
-    def describe(self, n_fixed: int = 0) -> str:
-        """One-line human-readable summary, for the run log."""
-        lo, hi = self.bounds(n_fixed)
+    def describe(self, n_fixed: Optional[int] = None) -> str:
+        """One-line human-readable summary, for the run log.
+
+        Both quantities in this message are decoration-atom counts, and the
+        message says so. The previous wording -- ``decoration size: fixed 10
+        atoms (clipped to [5, 80])`` -- put a decoration count next to a range
+        derived from the dataset's TOTAL molecule size evaluated at
+        ``n_fixed=0``, so the two numbers were in different units with nothing
+        marking the difference: a decoration of 3 on 27 fixed atoms looked like
+        it violated a floor of 5 when it was perfectly valid (30 total).
+
+        The clip range depends on how many atoms the reference holds fixed,
+        which is per molecule and not known when the sampler is built. Pass
+        ``n_fixed`` to resolve it; omit it and the message says the range is
+        resolved per molecule rather than inventing a number.
+        """
         if self.kind == "fixed":
-            body = f"fixed {self.params[0]} atoms"
+            body = f"exactly {self.params[0]}"
         elif self.kind == "uniform":
             body = f"uniform[{self.params[0]}, {self.params[1]}]"
         elif self.kind == "normal":
@@ -297,11 +315,42 @@ class DecorationSizeSampler:
         elif self.kind == "poisson":
             body = f"poisson(lambda={self.params[0]:g})"
         elif self.kind == "reference":
-            body = f"reference +/- {self.params[0]:.0%}"
+            body = f"reference R-group count +/- {self.params[0]:.0%}"
         else:
             body = f"dataset[{self.dataset}] size distribution"
-        ds = f", dataset={self.dataset}" if self.dataset else ""
-        return f"decoration size: {body} (clipped to [{lo}, {hi}]{ds})"
+
+        if n_fixed is None:
+            clip = (
+                "clipped per molecule so that fixed + decoration stays within "
+                f"the {self.dataset or 'default'} total-size range"
+            )
+        else:
+            lo, hi = self.bounds(n_fixed)
+            clip = (
+                f"clipped to [{lo}, {hi}] decoration atoms for this molecule's "
+                f"{n_fixed} fixed atoms"
+            )
+        return f"decoration size (atoms to generate): {body}; {clip}"
+
+    def realised_report(self) -> Optional[str]:
+        """Summary of the draws actually made, or None if the sampler never ran.
+
+        This is the counterpart to :meth:`describe`, which reports intent at
+        construction time. ``describe`` firing in a run log says only that a
+        sampler exists -- it does NOT mean the budget reached the prior. During
+        development that distinction mattered: two modes whose logs showed no
+        size line hit their requested sizes exactly, while a mode that printed
+        the line was generating unconditionally, because a separate gate had
+        skipped the whole conditional path. Reporting the draws closes that gap.
+        """
+        if not self._draws:
+            return None
+        lo, hi = min(self._draws), max(self._draws)
+        span = f"{lo}" if lo == hi else f"{lo}-{hi}"
+        return (
+            f"decoration size: drew {len(self._draws)} value(s), "
+            f"{span} atoms (mean {sum(self._draws) / len(self._draws):.1f})"
+        )
 
 
 def assert_heavy_atom_semantics(hparams: dict, flag_name: str = "--decoration_size"):

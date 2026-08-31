@@ -240,6 +240,17 @@ def resolve_region_mask(
     Murcko is used here because it is the documented, predictable default, and
     a user wanting the other split can express it in SMARTS.
 
+    KNOWN DIVERGENCE: the generation dispatcher in ``interpolate.py`` still uses
+    ``extract_scaffold_elaboration`` for its no-flag default, so an actual run
+    of ``--scaffold_decoration`` without ``--scaffold`` fixes 27 atoms while
+    this function reports 29. Both are defensible definitions of "the
+    scaffold", but the same flag resolving differently by code path is a trap:
+    it silently shifts every decoration count by 2 on this molecule. The two
+    defaults should be reconciled -- preferably by routing the dispatcher
+    through here -- and until then measurements must state which path produced
+    them. Passing --scaffold explicitly avoids the ambiguity entirely, which is
+    the recommended usage.
+
     Args:
         mol: Reference molecule.
         mode: A member of :data:`DESIGN_MODES`.

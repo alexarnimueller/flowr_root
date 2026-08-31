@@ -191,6 +191,35 @@ class dotdict(dict):
     __delattr__ = dict.__delitem__
 
 
+
+def report_realised_decoration_sizes(interpolant) -> Optional[str]:
+    """Print and return the decoration sizes actually drawn during a run.
+
+    The configured policy is logged when the interpolant is built, but that
+    message only proves a sampler exists. It does not prove the budget was
+    applied: a mode absent from the master inpainting gate routes generation
+    down the unconditional path, where no size code runs at all, and the config
+    line still appears. Two modes that printed no size line were once hitting
+    their requested sizes exactly while a mode that printed one was generating
+    unconditionally. Reporting realised draws makes the log say which happened.
+
+    Returns the message, or None when no draw was made -- itself the signal
+    that the budget never reached the prior.
+    """
+    sampler = getattr(interpolant, "decoration_size_sampler", None)
+    if sampler is None:
+        return None
+    msg = sampler.realised_report()
+    if msg is None:
+        print(
+            "[warn] a decoration-size flag was set but no size was ever drawn: "
+            "generation did not take the size-controlled path, so the atom "
+            "budget was ignored"
+        )
+        return None
+    print("[realised] " + msg)
+    return msg
+
 def get_conditional_mode(args):
     """Return the active conditioning mode, or None for unconditional runs.
 
@@ -584,10 +613,14 @@ def load_util(
     # Store ring_system_index for core_growing mode
     eval_interpolant.ring_system_index = getattr(args, "ring_system_index", 0)
 
-    # Report the decoration-size policy, so the run log says which of the three
-    # possible budgets is actually in force.
+    # Report the decoration-size POLICY. This says what was configured, not
+    # what generation did: the sampler existing does not prove its value reached
+    # the prior (a separate mode gate can skip the conditional path entirely).
+    # report_realised_decoration_sizes() below closes that gap after sampling.
     if eval_interpolant.decoration_size_sampler is not None:
-        print(eval_interpolant.decoration_size_sampler.describe())
+        print(
+            "[config] " + eval_interpolant.decoration_size_sampler.describe()
+        )
 
     # Print fragment growing configuration once
     if getattr(args, "fragment_growing", False) and getattr(args, "grow_size", None):

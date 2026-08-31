@@ -178,6 +178,26 @@ def test_sanitized_for_matching_restores_aromaticity(apixaban):
     assert len(fixed.GetSubstructMatches(Chem.MolFromSmarts(CORE))) == 1
 
 
+def test_murcko_default_diverges_from_dispatcher_default(apixaban):
+    """Pin the known divergence between the two no-flag scaffold defaults.
+
+    resolve_region_mask uses bare Murcko (29 of apixaban's 34 atoms); the
+    generation dispatcher uses Murcko plus functional groups (27). The same
+    --scaffold_decoration flag therefore fixes a different number of atoms
+    depending on code path, shifting every decoration count by 2 on this
+    molecule. This test documents the gap so that closing it is a deliberate,
+    visible change rather than a silent one.
+    """
+    from flowr.data.interpolate import extract_scaffold_elaboration
+
+    registry = dm.build_mask_from_query(apixaban, dm.SCAFFOLD_DECORATION, query=None)
+    dispatcher = extract_scaffold_elaboration(
+        [apixaban], invert_mask=True, includeHs=False
+    )[0]
+    assert int(registry.sum()) == 29
+    assert int(dispatcher.sum()) == 27
+
+
 def test_describe_mask_reports_both_counts(apixaban):
     mask = dm.build_mask_from_query(apixaban, dm.SUBSTRUCTURE_INPAINTING, query=CORE)
     text = dm.describe_mask(dm.SUBSTRUCTURE_INPAINTING, mask)
