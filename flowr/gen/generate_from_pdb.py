@@ -691,6 +691,13 @@ def get_args():
         "Mutually exclusive with --decoration_size.",
     )
     parser.add_argument(
+        "--decoration_size_seed",
+        type=int,
+        default=None,
+        help="Seed for --decoration_size_dist draws, so a size profile is "
+        "reproducible across runs. Ignored for a fixed --decoration_size.",
+    )
+    parser.add_argument(
         "--fragment_size_variation",
         type=float,
         default=0.1,

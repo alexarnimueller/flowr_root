@@ -523,7 +523,7 @@ def load_util(
         grow_size=getattr(args, "grow_size", None),
         decoration_size=getattr(args, "decoration_size", None),
         decoration_size_dist=getattr(args, "decoration_size_dist", None),
-        decoration_size_seed=getattr(args, "seed", None),
+        decoration_size_seed=getattr(args, "decoration_size_seed", None),
         # NOTE: fragment_size_variation was never forwarded, so --sample_mol_sizes
         # always used the hardcoded default of 0.1 regardless of intent.
         fragment_size_variation=getattr(args, "fragment_size_variation", 0.1),
