@@ -692,8 +692,17 @@ def extract_substructure(
                 "Substructure could not be extracted as reference molecule could not be sanitized. Skipping."
             )
             return mask
+        # Match against the SANITIZED copy, not the molecule as handed in. The
+        # generation pipeline kekulizes the reference when
+        # remove_aromaticity=True, and a kekulized target matches no aromatic
+        # SMARTS at all: 'c1nn(-c2ccccc2)c2c1CCNC2=O' matches apixaban once as
+        # loaded and zero times after kekulization. The repair above was
+        # previously computed into _mol and then thrown away, because matching
+        # used `mol`, so aromatic queries could never match inside a run.
+        # Atom indices are preserved by sanitization, so the mask still refers
+        # to positions in the original molecule.
         substructure, fmt = parse_substructure_query(
-            substructure_query, query_format=query_format, target=mol
+            substructure_query, query_format=query_format, target=_mol
         )
         if substructure is None:
             print(
@@ -703,7 +712,7 @@ def extract_substructure(
             return mask
         substructure_atoms = ()
         try:
-            substructure_atoms = mol.GetSubstructMatches(substructure)
+            substructure_atoms = _mol.GetSubstructMatches(substructure)
         except Exception as e:
             print(e)
         if len(substructure_atoms) == 0:
@@ -731,7 +740,7 @@ def extract_substructure(
         mask[torch.tensor(flat)] = 1
         print(
             f"Substructure query parsed as {fmt.upper()}, fixing "
-            f"{len(flat)}/{mol.GetNumAtoms()} atoms."
+            f"{len(flat)}/{_mol.GetNumAtoms()} atoms."
         )
         return mask
 
