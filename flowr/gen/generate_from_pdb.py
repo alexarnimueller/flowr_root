@@ -702,11 +702,27 @@ def get_args():
     parser.add_argument("--ring_system_indexing", default=0, type=int)
     parser.add_argument("--substructure_inpainting", action="store_true")
     parser.add_argument(
+        "--substructure_query_format",
+        type=str,
+        default="auto",
+        choices=["auto", "smarts", "smiles"],
+        help="How to parse --substructure. 'auto' (default) tries SMARTS "
+        "then SMILES; 'smarts' and 'smiles' never fall back, so a bad "
+        "query errors instead of silently matching nothing.",
+    )
+    parser.add_argument(
+        "--substructure_first_match_only",
+        action="store_true",
+        help="Fix only the first substructure match. By default the union "
+        "of all matches is fixed, which for a generic query such as "
+        "'[R2]' can cover far more of the molecule than intended.",
+    )
+    parser.add_argument(
         "--substructure", 
         type=parse_substructure,
         nargs='+',  # This allows multiple space-separated values
         default=None,
-        help="SMILES/SMARTS string or space-separated atom indices (e.g., '10 11 12 13' or 'c1ccccc1')"
+        help="SMARTS (preferred) or SMILES pattern, or space-separated atom indices. Parsed as SMARTS first, falling back to SMILES; use --substructure_query_format to force one. E.g. '[c,n;r5]', 'C(=O)[NX3;H2]', or '10 11 12 13'"
     )
     parser.add_argument(
         "--graph_inpainting",

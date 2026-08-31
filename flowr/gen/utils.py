@@ -531,6 +531,10 @@ def load_util(
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
         substructure=args.substructure,
+        substructure_query_format=getattr(args, "substructure_query_format", "auto"),
+        substructure_first_match_only=getattr(
+            args, "substructure_first_match_only", False
+        ),
         graph_inpainting=args.graph_inpainting,
         dataset=getattr(args, "dataset", None),
         sample_mol_sizes=args.sample_mol_sizes,
@@ -675,6 +679,10 @@ def load_util_mol(
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
         substructure=args.substructure,
+        substructure_query_format=getattr(args, "substructure_query_format", "auto"),
+        substructure_first_match_only=getattr(
+            args, "substructure_first_match_only", False
+        ),
         graph_inpainting=args.graph_inpainting,
         dataset=getattr(args, "dataset", None),
         sample_mol_sizes=args.sample_mol_sizes,
