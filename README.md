@@ -100,7 +100,7 @@ For training and generation, we provide basic bash and SLURM scripts in the `scr
 
 ### Data
 
-Download the datasets and the latest (02.06.2026: v2.1) FLOWR.root checkpoint here:
+Download the datasets and the latest (v2.2) FLOWR.root checkpoint here:
 [Google Drive](https://drive.google.com/drive/u/0/folders/1NWpzTY-BG_9C4zXZndWlKwdu7UJNCYj8).
 
 ### Generating Molecules from PDB/CIF
@@ -109,10 +109,38 @@ If you provide a protein PDB/CIF file, you need to provide a ligand file (SDF/MO
 We recommend using (Schrödinger-)prepared complexes for best results with the protein and ligand being protonated.
 
 Note, if you want to run conditional generation, you need to provide a ligand file as reference.
-Crucially, there are two different modes, "global" and "local".
-Global: If you want to run scaffold hopping or elaboration (scaffold_hopping, scaffold_elaboration), interaction- (interaction_conditional), core-conditional (core_growing) or general fragment-conditional (fragment_growing) generation, simply specifiy it via the respective flags (more below).
-Local: If you want to replace a core, or a fragment/any part of your reference ligand, specify the --substructure_inpainting flag and provide the atom indices with the --substructure flag that you want to change. This will trigger a local replacement via automated prior-shifting.
-In both cases, the generation is not fully deterministic and fixed parts might also be slightly changed by the model. This can be seen as a feature (shape-based exploration), or as a bug. If you are team bug, set the --filter_cond_substructure flag (RDKit will try to filter based on substructure matching).
+
+Every conditional mode answers the same two questions: **which atoms of the reference do you
+name**, and **is that region kept or regenerated**. You name the region with `--scaffold` or
+`--substructure` (SMARTS preferred, SMILES and atom indices also accepted), and the mode decides
+the polarity:
+
+| mode | the named region is | use it for |
+| --- | --- | --- |
+| `--scaffold_decoration` | **kept** | lead optimisation: hold the core, vary substituents |
+| `--scaffold_hopping` | **regenerated** | scaffold replacement: hold the substituents, swap the core |
+| `--substructure_inpainting` | **kept** | hold any part of the ligand, regenerate the rest |
+| `--substructure_replacement` | **regenerated** | replace a fragment, linker or core |
+| `--fragment_growing` | everything kept | grow outward from a fragment |
+| `--de_novo` | nothing kept | unconstrained generation in the pocket |
+
+`--scaffold_decoration`/`--scaffold_hopping` and
+`--substructure_inpainting`/`--substructure_replacement` are the same operation at opposite
+polarity. If you omit `--scaffold`, the two scaffold modes fall back to automatic Murcko
+scaffold perception; the substructure modes always require `--substructure`, because "replace
+something" is not a well-defined instruction.
+
+A mask value of `True` always means the atom is fixed, in every mode. There is no longer a
+"local" versus "global" distinction: it used to make `--substructure` mean "atoms to keep" in
+some modes and "atoms to regenerate" in others, and it prevented user-specified regions from
+being combined with a variable atom budget.
+
+Generation is not fully deterministic, and fixed parts may still be shifted slightly by the
+model — on a 34-atom reference we measure 0.4–0.9 Å of relaxation on the held atoms while the
+chemistry is preserved exactly. This is shape-based exploration rather than a defect; forcing
+the held atoms to their exact input coordinates makes the model's newly formed bonds
+over-valent and RDKit then rejects the molecule. If you need a hard guarantee on the retained
+substructure, set `--filter_cond_substructure` to filter by RDKit substructure matching.
 
 Modify `scripts/generate_pdb.sl` according to your requirements, then submit the job via SLURM:
 
@@ -122,20 +150,40 @@ sbatch scripts/generate_pdb.sl
 
 **Conditional Generation Options:**
 
-**⚠️ NOTE:** Inpainting modes slightly changed with push from 02.06.2026; see below:
+**⚠️ NOTE:** The mode flags were unified — `scaffold_elaboration` is now
+`scaffold_decoration`, `substructure_inpainting` changed meaning (it now *keeps* the named
+region; use `substructure_replacement` for the old behaviour), and `core_growing`,
+`linker_inpainting` and `fragment_inpainting` were removed in favour of naming the region
+explicitly. Removed flags raise an error naming their replacement.
 
-- `--substructure_inpainting`: Enable substructure generation (e.g. fragment replacement)
-- `--substructure`: Atom indices that you want to change (!) (e.g., `21 23 30 31 32 33 34 35`)
-- `--fragment_growing`: Fragment-constrained generation (using provided fragment to grow from)
-- `--grow_size`: Number of atoms to grow additional to given fragment (only for fragment_growing mode)
-- `--prior_center_file`: Provide starting coordinate(s)/density as xyz file (can be std. xyz-file, only x y z, or numpy array-like 2d matrix; only for fragment_growing mode)
-- `--core_growing`: Core-constrained generation (using RDKit to extract a core; if multiple cores, select by index using -- ring_system_index, which defaults to 0)
-- `--ring_system_index`: Use when running core_growing to select the core (default: 0; only relevant if number of cores > 0)
-- `--scaffold_hopping`: Scaffold generation (using RDKit to extract functional groups)
-- `--scaffold_elaboration`: Functional group generation (using RDKit to extract scaffold)
-- `--interaction_conditional`: Interaction-constrained generation mode (using ProLIF to extract interactions)
-- `--compute_interactions`: Needed for interaction_conditional (using ProLIF to extract interactions)
-- `--filter_cond_substructure`: Filter to ensure inpainting constraint is satisfied
+**Modes:**
+
+- `--scaffold_decoration`: Keep the scaffold, regenerate the substituents
+- `--scaffold_hopping`: Regenerate the scaffold, keep the substituents
+- `--substructure_inpainting`: Keep the region named by `--substructure`, regenerate the rest
+- `--substructure_replacement`: Regenerate the region named by `--substructure`, keep the rest
+- `--fragment_growing`: Keep the whole reference and grow additional atoms
+- `--interaction_conditional`: Interaction-constrained generation (using ProLIF to extract interactions). Orthogonal to the modes above.
+
+**Naming the region:**
+
+- `--scaffold`: SMARTS (preferred), SMILES, or atom indices defining the scaffold for the two scaffold modes. Omit to use automatic Murcko perception. E.g. `--scaffold 'c1nn(-c2ccccc2)c2c1CCNC2=O'`
+- `--substructure`: Same formats, for the two substructure modes. Required. E.g. `--substructure 'C(=O)[NX3;H2]'` or `--substructure 21 23 30 31 32 33 34 35`
+- `--substructure_query_format`: `auto` (default; SMARTS first, SMILES fallback), `smarts`, or `smiles`. The explicit values never fall back, so a malformed query errors instead of silently matching nothing.
+- `--substructure_first_match_only`: Keep only the first match. By default the union of all matches is fixed, which for a generic query such as `[R2]` can cover much more of the molecule than intended.
+
+**Controlling how many atoms are generated:**
+
+- `--decoration_size`: Exact number of atoms to generate. Independent of the reference, so the same reference can be shrunk or grown: on a 34-atom reference with 27 held, `--decoration_size 3` gives 30 atoms and `--decoration_size 15` gives 42.
+- `--decoration_size_dist`: Sample the count per molecule. `uniform:MIN:MAX` | `normal:MEAN:STD` | `poisson:LAMBDA` | `reference:FRAC` | `dataset:NAME`
+- `--decoration_size_seed`: Seed for the above, for reproducible size profiles
+- `--grow_size`: Legacy alias for `fragment_growing` only; `--decoration_size` supersedes it
+- `--prior_center_file`: Starting coordinate(s)/density as xyz file (std. xyz, bare `x y z`, or a 2D numpy matrix; only for fragment_growing)
+
+**Other:**
+
+- `--compute_interactions`: Needed for `--interaction_conditional`
+- `--filter_cond_substructure`: Filter to ensure the retained substructure is present
 
 **Prior Options:**
 
@@ -180,10 +228,10 @@ Modify `scripts/generate_sdf.sl` according to your requirements:
 
 **Conditional Generation Options:**
 
-- `--substructure_inpainting`: Enable substructure generation
-- `--substructure`: Atom indices that you want to change (!) (e.g., `21 23 30 31 32 33 34 35`)
-- `--scaffold_hopping`: Scaffold generation (using RDKit to extract RDKit)
-- `--scaffold_elaboration`: Functional group generation (using RDKit to extract all functional groups)
+The modes and region flags are the same as for pocket-conditioned generation above:
+`--scaffold_decoration`, `--scaffold_hopping`, `--substructure_inpainting`,
+`--substructure_replacement` and `--fragment_growing`, with the region named by `--scaffold` or
+`--substructure` and the atom budget set by `--decoration_size` / `--decoration_size_dist`.
 
 **Post-processing Options:**
 

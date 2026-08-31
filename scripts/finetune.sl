@@ -92,10 +92,10 @@ python -m flowr.finetune \
     --lr_gamma "$lr_gamma"  \
     --permutation_alignment \
     --mixed_uncond_inpaint \
-    --fragment_inpainting \
+    # --fragment_inpainting was removed; use --substructure_replacement --substructure '<SMARTS>'
     --fragment_growing \
     --scaffold_hopping \
-    --scaffold_elaboration \
+    --scaffold_decoration \
     --predict_affinity \
     --affinity_loss_weight 3.0 \
     # --interaction_inpainting \

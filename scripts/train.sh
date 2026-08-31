@@ -80,10 +80,10 @@ python -m flowr.train \
     --remove_hs \
     --remove_aromaticity \
     --mixed_uncond_inpaint \
-    --fragment_inpainting \
+    # --fragment_inpainting was removed; use --substructure_replacement --substructure '<SMARTS>'
     --fragment_growing \
     --scaffold_hopping \
-    --scaffold_elaboration \
+    --scaffold_decoration \
     --anisotropic_prior \
     --ref_ligand_com_prior \
     --ref_ligand_com_noise_std 0.2 \
