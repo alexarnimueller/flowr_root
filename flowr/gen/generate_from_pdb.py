@@ -650,13 +650,21 @@ def get_args():
     parser.add_argument("--interaction_time", type=float, default=None)
     parser.add_argument("--fixed_interactions", action="store_true")
     parser.add_argument("--interaction_conditional", action="store_true")
-    parser.add_argument("--scaffold_hopping", action="store_true")
-    parser.add_argument("--scaffold_elaboration", action="store_true")
-    parser.add_argument("--linker_inpainting", action="store_true")
+    parser.add_argument(
+        "--scaffold_hopping",
+        action="store_true",
+        help="Replace the scaffold, keep the substituents. Scaffold is "
+        "--scaffold if given, else the Murcko scaffold.",
+    )
+    parser.add_argument(
+        "--scaffold_decoration",
+        action="store_true",
+        help="Keep the scaffold, regenerate the substituents. Scaffold is "
+        "--scaffold if given, else the Murcko scaffold.",
+    )
     parser.add_argument("--anisotropic_prior", action="store_true")
     parser.add_argument("--ref_ligand_com_prior", action="store_true")
     parser.add_argument("--ref_ligand_com_noise_std", type=float, default=0.05)
-    parser.add_argument("--fragment_inpainting", action="store_true")
     parser.add_argument("--fragment_growing", action="store_true")
     parser.add_argument(
         "--grow_size", 
@@ -705,9 +713,28 @@ def get_args():
         "is set. Previously hardcoded to 0.1 and unreachable from the CLI.",
     )
     parser.add_argument("--max_fragment_cuts", type=int, default=3)
-    parser.add_argument("--core_growing", action="store_true")
     parser.add_argument("--ring_system_indexing", default=0, type=int)
-    parser.add_argument("--substructure_inpainting", action="store_true")
+    parser.add_argument(
+        "--substructure_inpainting",
+        action="store_true",
+        help="KEEP the substructure named by --substructure and regenerate "
+        "everything else.",
+    )
+    parser.add_argument(
+        "--substructure_replacement",
+        action="store_true",
+        help="REPLACE the substructure named by --substructure and keep "
+        "everything else.",
+    )
+    parser.add_argument(
+        "--scaffold",
+        type=parse_substructure,
+        nargs="+",
+        default=None,
+        help="SMARTS (preferred) or SMILES naming the scaffold for "
+        "--scaffold_decoration / --scaffold_hopping, or space-separated "
+        "atom indices. Omit to use the Murcko scaffold.",
+    )
     parser.add_argument(
         "--substructure_query_format",
         type=str,

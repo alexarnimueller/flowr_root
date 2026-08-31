@@ -801,11 +801,11 @@ def build_model(
             use_fourier_time_embed=args.use_fourier_time_embed,
             graph_inpainting=args.graph_inpainting,
             use_inpaint_mode_embed=args.scaffold_hopping
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.interaction_conditional
-            or args.core_growing
-            or args.linker_inpainting
-            or args.fragment_inpainting
+            or False
+            or False
+            or False
             or args.fragment_growing
             or args.substructure_inpainting,
             self_cond=args.self_condition,
@@ -868,11 +868,11 @@ def build_model(
             use_fourier_time_embed=args.use_fourier_time_embed,
             graph_inpainting=args.graph_inpainting,
             use_inpaint_mode_embed=args.scaffold_hopping
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.interaction_conditional
-            or args.core_growing
-            or args.linker_inpainting
-            or args.fragment_inpainting
+            or False
+            or False
+            or False
             or args.fragment_growing
             or args.substructure_inpainting,
             self_cond=args.self_condition,
@@ -1021,10 +1021,10 @@ def build_model(
         predict_interactions=args.predict_interactions,
         interaction_conditional=args.interaction_conditional,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
-        linker_inpainting=args.linker_inpainting,
-        core_growing=args.core_growing,
-        fragment_inpainting=args.fragment_inpainting,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
+        linker_inpainting=False,  # mode removed
+        core_growing=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         substructure_inpainting=args.substructure_inpainting,
         graph_inpainting=args.graph_inpainting is not None,
@@ -1079,10 +1079,10 @@ def load_model(
     )
     hparams["interaction_conditional"] = args.interaction_conditional
     hparams["scaffold_hopping"] = args.scaffold_hopping
-    hparams["scaffold_elaboration"] = args.scaffold_elaboration
-    hparams["linker_inpainting"] = args.linker_inpainting
-    hparams["core_growing"] = args.core_growing
-    hparams["fragment_inpainting"] = args.fragment_inpainting
+    hparams["scaffold_elaboration"] = getattr(args, "scaffold_decoration", False)
+    hparams["linker_inpainting"] = False
+    hparams["core_growing"] = False
+    hparams["fragment_inpainting"] = False
     hparams["fragment_growing"] = args.fragment_growing
     hparams["substructure_inpainting"] = args.substructure_inpainting
     hparams["substructure"] = args.substructure
@@ -1599,10 +1599,10 @@ def load_mol_model(
         or hparams.get("substructure_inpainting", False)
     )
     hparams["scaffold_hopping"] = args.scaffold_hopping
-    hparams["scaffold_elaboration"] = args.scaffold_elaboration
-    hparams["linker_inpainting"] = args.linker_inpainting
-    hparams["core_growing"] = args.core_growing
-    hparams["fragment_inpainting"] = args.fragment_inpainting
+    hparams["scaffold_elaboration"] = getattr(args, "scaffold_decoration", False)
+    hparams["linker_inpainting"] = False
+    hparams["core_growing"] = False
+    hparams["fragment_inpainting"] = False
     hparams["fragment_growing"] = args.fragment_growing
     hparams["substructure_inpainting"] = args.substructure_inpainting
     hparams["substructure"] = args.substructure
@@ -1882,10 +1882,10 @@ def build_mol_model(
         use_fourier_time_embed=args.use_fourier_time_embed,
         graph_inpainting=args.graph_inpainting,
         use_inpaint_mode_embed=args.scaffold_hopping
-        or args.scaffold_elaboration
-        or args.core_growing
-        or args.linker_inpainting
-        or args.fragment_inpainting
+        or getattr(args, "scaffold_decoration", False)
+        or False
+        or False
+        or False
         or args.fragment_growing
         or args.substructure_inpainting,
         self_cond=args.self_condition,
@@ -2001,10 +2001,10 @@ def build_mol_model(
         dataset_info=dataset_info,
         data_path=args.data_path,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
-        linker_inpainting=args.linker_inpainting,
-        core_growing=args.core_growing,
-        fragment_inpainting=args.fragment_inpainting,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
+        linker_inpainting=False,  # mode removed
+        core_growing=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         substructure_inpainting=args.substructure_inpainting,
         graph_inpainting=args.graph_inpainting is not None,
@@ -2078,10 +2078,10 @@ def build_mol_mean_flow_model(
         use_fourier_time_embed=args.use_fourier_time_embed,
         graph_inpainting=args.graph_inpainting,
         use_inpaint_mode_embed=args.scaffold_hopping
-        or args.scaffold_elaboration
-        or args.core_growing
-        or args.linker_inpainting
-        or args.fragment_inpainting
+        or getattr(args, "scaffold_decoration", False)
+        or False
+        or False
+        or False
         or args.fragment_growing
         or args.substructure_inpainting,
         self_cond=args.self_condition,
@@ -2215,10 +2215,10 @@ def build_mol_mean_flow_model(
         dataset_info=dataset_info,
         data_path=args.data_path,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
-        linker_inpainting=args.linker_inpainting,
-        core_growing=args.core_growing,
-        fragment_inpainting=args.fragment_inpainting,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
+        linker_inpainting=False,  # mode removed
+        core_growing=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         substructure_inpainting=args.substructure_inpainting,
         graph_inpainting=args.graph_inpainting is not None,
@@ -2706,12 +2706,12 @@ def build_dm(
         flow_interactions=args.flow_interactions,
         interaction_conditional=args.interaction_conditional,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
         substructure_inpainting=args.substructure_inpainting,
         substructure=args.substructure,
-        linker_inpainting=args.linker_inpainting,
-        core_growing=args.core_growing,
-        fragment_inpainting=args.fragment_inpainting,
+        linker_inpainting=False,  # mode removed
+        core_growing=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         max_fragment_cuts=args.max_fragment_cuts,
         graph_inpainting=args.graph_inpainting,
@@ -2776,10 +2776,10 @@ def build_dm(
         flow_interactions=args.flow_interactions,
         interaction_conditional=args.interaction_conditional,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
-        linker_inpainting=args.linker_inpainting,
-        core_growing=args.core_growing,
-        fragment_inpainting=args.fragment_inpainting,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
+        linker_inpainting=False,  # mode removed
+        core_growing=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
@@ -2792,25 +2792,25 @@ def build_dm(
         harmonic_prior_sigma=getattr(args, "harmonic_prior_sigma", 1.0),
         batch_ot=False,
         rotation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
             or args.interaction_conditional
-            or args.core_growing
+            or False
         )
         and args.rotation_alignment,
         permutation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
             or args.interaction_conditional
-            or args.core_growing
+            or False
         )
         and args.permutation_alignment,
         anisotropic_prior=getattr(args, "anisotropic_prior", False),
@@ -2967,12 +2967,12 @@ def load_dm(
             interaction_time_beta=args.time_beta,
             interaction_conditional=args.interaction_conditional,
             scaffold_hopping=args.scaffold_hopping,
-            scaffold_elaboration=args.scaffold_elaboration,
+            scaffold_elaboration=getattr(args, "scaffold_decoration", False),
             substructure_inpainting=args.substructure_inpainting,
             substructure=args.substructure,
-            linker_inpainting=args.linker_inpainting,
-            core_growing=args.core_growing,
-            fragment_inpainting=args.fragment_inpainting,
+            linker_inpainting=False,  # mode removed
+            core_growing=False,  # mode removed
+            fragment_inpainting=False,  # mode removed
             fragment_growing=args.fragment_growing,
             max_fragment_cuts=args.max_fragment_cuts,
             graph_inpainting=args.graph_inpainting,
@@ -3030,10 +3030,10 @@ def load_dm(
         flow_interactions=hparams["flow_interactions"],
         interaction_conditional=args.interaction_conditional,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
-        linker_inpainting=args.linker_inpainting,
-        core_growing=args.core_growing,
-        fragment_inpainting=args.fragment_inpainting,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
+        linker_inpainting=False,  # mode removed
+        core_growing=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         max_fragment_cuts=args.max_fragment_cuts,
         substructure_inpainting=args.substructure_inpainting,
@@ -3051,23 +3051,23 @@ def load_dm(
         vocab_hybridization=vocab_hybridization,
         batch_ot=False,
         rotation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
-            or args.core_growing
+            or False
         )
         and args.rotation_alignment,
         permutation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
-            or args.core_growing
+            or False
         )
         and args.permutation_alignment,
         anisotropic_prior=getattr(args, "anisotropic_prior", False),
@@ -3456,11 +3456,11 @@ def build_mol_dm(
         time_beta=args.time_beta,
         fixed_time=None,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
         substructure_inpainting=args.substructure_inpainting,
         substructure=args.substructure,
-        linker_inpainting=args.linker_inpainting,
-        fragment_inpainting=args.fragment_inpainting,
+        linker_inpainting=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         graph_inpainting=args.graph_inpainting,
         graph_inpainting_prob=getattr(args, "graph_inpainting_prob", 0.15),
@@ -3468,7 +3468,7 @@ def build_mol_dm(
             args, "skip_ot_for_graph_inpainting", True
         ),
         harmonic_prior_sigma=getattr(args, "harmonic_prior_sigma", 1.0),
-        core_growing=args.core_growing,
+        core_growing=False,  # mode removed
         max_fragment_cuts=args.max_fragment_cuts,
         mixed_uncond_inpaint=args.mixed_uncond_inpaint,
         mixed_uniform_beta_time=args.mixed_uniform_beta_time,
@@ -3497,11 +3497,11 @@ def build_mol_dm(
         type_interpolation=categorical_interpolation,
         bond_interpolation=categorical_interpolation,
         scaffold_hopping=args.scaffold_hopping,
-        scaffold_elaboration=args.scaffold_elaboration,
+        scaffold_elaboration=getattr(args, "scaffold_decoration", False),
         substructure_inpainting=args.substructure_inpainting,
         substructure=args.substructure,
-        linker_inpainting=args.linker_inpainting,
-        fragment_inpainting=args.fragment_inpainting,
+        linker_inpainting=False,  # mode removed
+        fragment_inpainting=False,  # mode removed
         fragment_growing=args.fragment_growing,
         graph_inpainting=args.graph_inpainting,
         graph_inpainting_prob=getattr(args, "graph_inpainting_prob", 0.15),
@@ -3509,7 +3509,7 @@ def build_mol_dm(
             args, "skip_ot_for_graph_inpainting", True
         ),
         harmonic_prior_sigma=getattr(args, "harmonic_prior_sigma", 1.0),
-        core_growing=args.core_growing,
+        core_growing=False,  # mode removed
         max_fragment_cuts=args.max_fragment_cuts,
         vocab=vocab,
         vocab_charges=vocab_charges,
@@ -3517,10 +3517,10 @@ def build_mol_dm(
         vocab_aromatic=vocab_aromatic,
         rotation_alignment=False,
         permutation_alignment=(
-            args.linker_inpainting
-            or args.fragment_inpainting
+            False
+            or False
             or args.fragment_growing
-            or args.scaffold_elaboration
+            or getattr(args, "scaffold_decoration", False)
             or args.substructure_inpainting
             or args.scaffold_hopping
         )

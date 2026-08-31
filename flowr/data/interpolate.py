@@ -6,6 +6,8 @@ from typing import List, Optional
 
 import numpy as np
 import torch
+
+from flowr.data import design_modes
 from rdkit import Chem
 from rdkit.Chem.rdMMPA import FragmentMol
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
@@ -1954,6 +1956,9 @@ class GeometricInterpolant(Interpolant):
         mixed_uniform_beta_time: bool = False,
         scaffold_hopping: bool = False,
         scaffold_elaboration: bool = False,
+        scaffold_decoration: bool = False,
+        substructure_replacement: bool = False,
+        scaffold: Optional[str] = None,
         linker_inpainting: bool = False,
         core_growing: bool = False,
         max_fragment_cuts: int = 3,
@@ -2029,7 +2034,13 @@ class GeometricInterpolant(Interpolant):
         self.virtual_atom_noise_std = virtual_atom_noise_std
         self.noatom_index = noatom_index
         self.scaffold_hopping = scaffold_hopping
-        self.scaffold_elaboration = scaffold_elaboration
+        # scaffold_decoration is the current name; scaffold_elaboration is
+        # accepted because released CHECKPOINTS store that hparam name.
+        self.scaffold_elaboration = scaffold_elaboration or scaffold_decoration
+        self.scaffold_decoration = self.scaffold_elaboration
+        self.substructure_replacement = substructure_replacement
+        self.substructure_is_fixed = not substructure_replacement
+        self.scaffold = scaffold[0] if isinstance(scaffold, list) and len(scaffold) == 1 else scaffold
         self.linker_inpainting = linker_inpainting
         self.core_growing = core_growing
         self.fragment_inpainting = fragment_inpainting
@@ -2998,6 +3009,10 @@ class GeometricInterpolant(Interpolant):
             active_local_modes.append("fragment_inpainting")
         if self.substructure_inpainting and self.inference:
             active_local_modes.append("substructure_inpainting")
+        if getattr(self, "substructure_replacement", False):
+            # Same code path as substructure_inpainting; polarity is set by
+            # substructure_is_fixed at the extractor call site.
+            active_local_modes.append("substructure_inpainting")
         if self.graph_inpainting:
             active_graph_modes.append("graph")
 
@@ -3056,6 +3071,8 @@ class GeometricInterpolant(Interpolant):
                 mode = random.choice(modes_list)
 
             # Determine if mode is local
+            # Retained only to select prior-to-fragment alignment (geometry),
+            # never to flip mask polarity.
             is_local = mode in active_local_modes
 
             # Extract mask based on mode
@@ -3066,15 +3083,53 @@ class GeometricInterpolant(Interpolant):
                 # but graph structure (types, bonds) is fixed
                 mask = torch.ones(to_mols[i].seq_length, dtype=torch.bool)
             elif mode == "scaffold_hopping":
-                mask = extract_scaffolds([rdkit_mols[i]], invert_mask=True)[0]
+                # True = FIXED. Hopping REPLACES the scaffold, so the scaffold
+                # atoms are the generated ones and the mask is inverted here at
+                # the source rather than by a category rule.
+                if getattr(self, "scaffold", None) is not None:
+                    mask = extract_substructure(
+                        [rdkit_mols[i]],
+                        substructure_query=self.scaffold,
+                        query_format=getattr(self, "substructure_query_format", "auto"),
+                        first_match_only=getattr(
+                            self, "substructure_first_match_only", False
+                        ),
+                        invert_mask=True,
+                    )[0]
+                else:
+                    mask = extract_scaffolds([rdkit_mols[i]], invert_mask=True)[0]
             elif mode == "scaffold_elaboration":
-                mask = extract_scaffold_elaboration(
-                    [rdkit_mols[i]], invert_mask=True, includeHs=False
-                )[0]
+                # scaffold_decoration: the scaffold is KEPT. With --scaffold the
+                # user's SMARTS defines it; otherwise the historical
+                # Murcko+functional-group split is used.
+                if getattr(self, "scaffold", None) is not None:
+                    mask = extract_substructure(
+                        [rdkit_mols[i]],
+                        substructure_query=self.scaffold,
+                        query_format=getattr(self, "substructure_query_format", "auto"),
+                        first_match_only=getattr(
+                            self, "substructure_first_match_only", False
+                        ),
+                        invert_mask=False,
+                    )[0]
+                else:
+                    mask = extract_scaffold_elaboration(
+                        [rdkit_mols[i]], invert_mask=True, includeHs=False
+                    )[0]
             elif mode == "linker_inpainting":
-                mask = extract_linkers([rdkit_mols[i]], invert_mask=True)[0]
+                # Removed in the design-mode unification: this mode's
+                # polarity depended on the blanket local-mode inversion,
+                # and its region is now expressible with --substructure /
+                # --scaffold. resolve_mode names the replacement.
+                design_modes.resolve_mode(mode)
+
             elif mode == "core_growing":
-                mask = extract_cores([rdkit_mols[i]], invert_mask=False)[0]
+                # Removed in the design-mode unification: this mode's
+                # polarity depended on the blanket local-mode inversion,
+                # and its region is now expressible with --substructure /
+                # --scaffold. resolve_mode names the replacement.
+                design_modes.resolve_mode(mode)
+
             elif mode == "fragment_growing":
                 # If grow_size is set, the input ligand IS the fragment to grow
                 # All atoms are fixed (mask = all True)
@@ -3088,28 +3143,16 @@ class GeometricInterpolant(Interpolant):
                         fragment_mode="single",
                     )[0]
             elif mode == "fragment_inpainting":
-                if self.fragment_modes is not None:
-                    fragment_mode = random.choice(self.fragment_modes)
-                    masks = extract_fragments(
-                        [rdkit_mols[i]],
-                        maxCuts=self.max_fragment_cuts,
-                        fragment_mode=fragment_mode,
-                    )[0]
-                    if isinstance(masks, list) and len(masks) > 1:
-                        mask = masks
-                    else:
-                        mask = extract_fragments(
-                            [rdkit_mols[i]],
-                            maxCuts=self.max_fragment_cuts,
-                            fragment_mode="single",
-                        )[0]
-                else:
-                    mask = extract_fragments(
-                        [rdkit_mols[i]],
-                        maxCuts=self.max_fragment_cuts,
-                        fragment_mode="fragment",
-                    )[0]
+                # Removed in the design-mode unification: this mode's
+                # polarity depended on the blanket local-mode inversion,
+                # and its region is now expressible with --substructure /
+                # --scaffold. resolve_mode names the replacement.
+                design_modes.resolve_mode(mode)
+
             elif mode == "substructure_inpainting":
+                # True = FIXED. The named substructure is KEPT, which is what
+                # "inpainting" now means uniformly. Use
+                # substructure_replacement for the opposite polarity.
                 mask = extract_substructure(
                     [rdkit_mols[i]],
                     substructure_query=self.substructure,
@@ -3117,7 +3160,7 @@ class GeometricInterpolant(Interpolant):
                     first_match_only=getattr(
                         self, "substructure_first_match_only", False
                     ),
-                    invert_mask=False,
+                    invert_mask=not getattr(self, "substructure_is_fixed", True),
                 )[0]
             elif mode == "interaction_conditional":
                 mask = interaction_mask[i]
@@ -3131,10 +3174,19 @@ class GeometricInterpolant(Interpolant):
             else:
                 raise ValueError(f"Unknown mode: {mode}")
 
-            # For local modes, INVERT mask (generate selected part, keep rest)
-            if is_local:
-                if not isinstance(mask, list):
-                    mask = ~mask
+            # Mask polarity is now declared per mode in
+            # flowr.data.design_modes.REGION_IS_FIXED and applied by the
+            # extractors' own invert_mask arguments, so True always means
+            # FIXED. The blanket inversion that used to happen here for
+            # "local" modes is gone: it made --substructure mean "atoms to
+            # regenerate" under substructure_inpainting and "atoms to keep"
+            # everywhere else, and it was invisible to the user.
+            #
+            # `is_local` survives only as a geometric flag: it selects
+            # _align_prior_to_fragment, which shifts the prior's variable
+            # fragment onto the reference's centre of mass. That is a
+            # legitimate behaviour and unrelated to polarity, so it is now
+            # decided on its own terms rather than by mode category.
 
             results.append(
                 (mode, mask.bool() if not isinstance(mask, list) else mask, is_local)
@@ -3445,6 +3497,9 @@ class ComplexInterpolant(GeometricInterpolant):
         interaction_conditional: bool = False,
         scaffold_hopping: bool = False,
         scaffold_elaboration: bool = False,
+        scaffold_decoration: bool = False,
+        substructure_replacement: bool = False,
+        scaffold: Optional[str] = None,
         linker_inpainting: bool = False,
         core_growing: bool = False,
         max_fragment_cuts: int = 3,
@@ -3509,6 +3564,9 @@ class ComplexInterpolant(GeometricInterpolant):
             max_fragment_cuts=max_fragment_cuts,
             substructure_inpainting=substructure_inpainting,
             substructure=substructure,
+            scaffold=scaffold,
+            scaffold_decoration=scaffold_decoration,
+            substructure_replacement=substructure_replacement,
             substructure_query_format=substructure_query_format,
             substructure_first_match_only=substructure_first_match_only,
             graph_inpainting=graph_inpainting,
