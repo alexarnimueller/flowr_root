@@ -3123,8 +3123,18 @@ class GeometricInterpolant(Interpolant):
                     mask = extract_scaffolds([rdkit_mols[i]], invert_mask=True)[0]
             elif mode == "scaffold_elaboration":
                 # scaffold_decoration: the scaffold is KEPT. With --scaffold the
-                # user's SMARTS defines it; otherwise the historical
-                # Murcko+functional-group split is used.
+                # user's SMARTS defines it; otherwise the Murcko scaffold.
+                #
+                # The no-flag default used to be extract_scaffold_elaboration,
+                # which computes the Murcko scaffold and then SUBTRACTS atoms
+                # that RDKit's IFG functional-group perception flags. On
+                # apixaban that removed the two lactam carbonyl oxygens (atoms
+                # 19 and 33) from the fixed set while leaving their ring carbons
+                # fixed, so the model was asked to regenerate the oxygen hanging
+                # off a fixed carbonyl carbon and could drop or replace it. No
+                # chemist specifying "hold this scaffold" means that, and for
+                # apixaban against factor Xa those carbonyls are not cosmetic.
+                # The Murcko scaffold is unambiguous and is now the default.
                 if getattr(self, "scaffold", None) is not None:
                     mask = extract_substructure(
                         [rdkit_mols[i]],
@@ -3136,9 +3146,9 @@ class GeometricInterpolant(Interpolant):
                         invert_mask=False,
                     )[0]
                 else:
-                    mask = extract_scaffold_elaboration(
-                        [rdkit_mols[i]], invert_mask=True, includeHs=False
-                    )[0]
+                    # True = FIXED, and the Murcko scaffold is what we keep.
+                    # Exact complement of scaffold_hopping's no-flag default.
+                    mask = extract_scaffolds([rdkit_mols[i]], invert_mask=False)[0]
             elif mode == "linker_inpainting":
                 # Removed in the design-mode unification: this mode's
                 # polarity depended on the blanket local-mode inversion,
