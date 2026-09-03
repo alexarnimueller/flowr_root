@@ -32,12 +32,6 @@ from flowr.data.interpolate import (
     GeometricInterpolant,
     GeometricNoiseSampler,
     _sanitize_or_fix_aromaticity,
-    extract_cores,
-    extract_fragments,
-    extract_linkers,
-    extract_scaffold_elaboration,
-    extract_scaffolds,
-    extract_substructure,
 )
 from flowr.data.preprocess_pdbs import canonicalize_atom_order, process_complex
 from flowr.eval.evaluate_xtb import (
@@ -259,6 +253,10 @@ def filter_substructure(
     gen_ligs: list[Chem.Mol],
     ref_mols: list[Chem.Mol],
     inpainting_mode: str,
+    scaffold_query: Optional[str] = None,
+    region_is_fixed: bool = True,
+    query_format: str = "auto",
+    first_match_only: bool = False,
     substructure_query: Optional[str] = None,
     max_fragment_cuts: int = 3,
     canonicalize_conformer: Optional[bool] = False,
@@ -283,6 +281,10 @@ def filter_substructure(
             gen_mol,
             ref_mol,
             inpainting_mode,
+            scaffold_query=scaffold_query,
+            region_is_fixed=region_is_fixed,
+            query_format=query_format,
+            first_match_only=first_match_only,
             substructure_query=substructure_query,
             max_fragment_cuts=max_fragment_cuts,
             canonicalize_conformer=canonicalize_conformer,
@@ -295,6 +297,10 @@ def check_substructure_match(
     gen_mol: Chem.Mol,
     ref_mol: Chem.Mol,
     inpainting_mode: str,
+    scaffold_query: Optional[str] = None,
+    region_is_fixed: bool = True,
+    query_format: str = "auto",
+    first_match_only: bool = False,
     substructure_query: Optional[str] = None,
     max_fragment_cuts: int = 3,
     canonicalize_conformer: Optional[bool] = False,
@@ -315,33 +321,29 @@ def check_substructure_match(
         True if the generated molecule contains the required substructure, False otherwise
     """
 
-    # Extract the expected substructure mask based on mode.
-    # For modes that REPLACE a structural motif (scaffold_hopping, scaffold_elaboration,
-    # linker_inpainting), we use invert_mask=True so the mask marks the FIXED atoms
-    # — those are the atoms that must still be present in the generated molecule.
-    if inpainting_mode == "scaffold_hopping":
-        expected_mask = extract_scaffolds([ref_mol], invert_mask=True)[0]
-    elif inpainting_mode == "scaffold_elaboration":
-        expected_mask = extract_scaffold_elaboration(
-            [ref_mol], invert_mask=True, includeHs=False
-        )[0]
-    elif inpainting_mode == "linker_inpainting":
-        expected_mask = extract_linkers([ref_mol], invert_mask=True)[0]
-    elif inpainting_mode == "core_growing":
-        expected_mask = extract_cores([ref_mol])[0]
-    elif inpainting_mode == "fragment_inpainting":
-        expected_mask = extract_fragments([ref_mol], maxCuts=max_fragment_cuts)[0]
-    elif inpainting_mode == "substructure_inpainting":
-        if substructure_query is None:
-            raise ValueError(
-                "substructure_query must be provided for substructure mode"
-            )
-        expected_mask = extract_substructure(
-            [ref_mol], substructure_query=substructure_query, invert_mask=True
-        )[0]
-    elif inpainting_mode == "interaction_conditional":
-        # For interaction mode, we can't check from ref_mol alone
-        print("Warning: Interaction mode validation not implemented")
+    # The expected mask must be the SAME mask the prior was built from, so it
+    # is derived by the registry rather than re-implemented here. Deriving it
+    # independently is exactly how the two drifted: this function used
+    # extract_scaffold_elaboration while the dispatcher moved to the Murcko
+    # scaffold, and for substructure modes it used the pre-unification polarity
+    # (invert_mask=True), validating the atoms that were REGENERATED instead of
+    # the ones held fixed -- rejecting correct molecules and passing wrong ones.
+    expected_mask = design_modes.expected_fixed_mask(
+        ref_mol,
+        inpainting_mode,
+        scaffold_query=scaffold_query,
+        substructure_query=substructure_query,
+        region_is_fixed=region_is_fixed,
+        query_format=query_format,
+        first_match_only=first_match_only,
+    )
+    if expected_mask is None:
+        # interaction_conditional and unrecognised modes carry no
+        # ligand-topology constraint checkable from the reference alone.
+        print(
+            f"Warning: no substructure constraint to validate for mode "
+            f"'{inpainting_mode}'"
+        )
         return True
     elif inpainting_mode == "fragment_growing":
         # For fragment growing, the entire input ligand IS the fragment to preserve

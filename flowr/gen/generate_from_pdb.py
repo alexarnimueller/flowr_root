@@ -224,6 +224,16 @@ def evaluate(args):
                     ref_ligs,
                     inpainting_mode=inpainting_mode,
                     substructure_query=args.substructure,
+                    scaffold_query=getattr(args, "scaffold", None),
+                    region_is_fixed=not getattr(
+                        args, "substructure_replacement", False
+                    ),
+                    query_format=getattr(
+                        args, "substructure_query_format", "auto"
+                    ),
+                    first_match_only=getattr(
+                        args, "substructure_first_match_only", False
+                    ),
                     max_fragment_cuts=3,
                     canonicalize_conformer=args.canonicalize_conformer,
                 )

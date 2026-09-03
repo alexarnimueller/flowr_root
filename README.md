@@ -156,6 +156,13 @@ region; use `substructure_replacement` for the old behaviour), and `core_growing
 `linker_inpainting` and `fragment_inpainting` were removed in favour of naming the region
 explicitly. Removed flags raise an error naming their replacement.
 
+**⚠️ The no-`--scaffold` default also changed.** `--scaffold_decoration` now holds the RDKit
+Murcko scaffold. It previously held Murcko *minus* atoms flagged by IFG functional-group
+perception, which on apixaban fixed 27 of 34 atoms instead of 29 — the two extra atoms being
+the lactam carbonyl oxygens, whose ring carbons stayed fixed. That asked the model to
+regenerate the oxygen on a fixed carbonyl carbon, so it could drop or substitute it. If you
+were relying on the old split, pass it explicitly as SMARTS via `--scaffold`.
+
 **Modes:**
 
 - `--scaffold_decoration`: Keep the scaffold, regenerate the substituents

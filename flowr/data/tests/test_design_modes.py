@@ -178,24 +178,48 @@ def test_sanitized_for_matching_restores_aromaticity(apixaban):
     assert len(fixed.GetSubstructMatches(Chem.MolFromSmarts(CORE))) == 1
 
 
-def test_murcko_default_diverges_from_dispatcher_default(apixaban):
-    """Pin the known divergence between the two no-flag scaffold defaults.
+def test_scaffold_default_is_the_murcko_scaffold(apixaban):
+    """Both code paths must resolve --scaffold_decoration to RDKit Murcko.
 
-    resolve_region_mask uses bare Murcko (29 of apixaban's 34 atoms); the
-    generation dispatcher uses Murcko plus functional groups (27). The same
-    --scaffold_decoration flag therefore fixes a different number of atoms
-    depending on code path, shifting every decoration count by 2 on this
-    molecule. This test documents the gap so that closing it is a deliberate,
-    visible change rather than a silent one.
+    They used to disagree: resolve_region_mask returned bare Murcko (29 of
+    apixaban's 34 atoms) while the generation dispatcher used
+    extract_scaffold_elaboration, which subtracts IFG functional-group atoms
+    (27). The same flag fixed a different count depending on code path, shifting
+    every decoration count by 2 on this molecule.
     """
-    from flowr.data.interpolate import extract_scaffold_elaboration
+    from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 
+    from flowr.data.interpolate import extract_scaffolds
+
+    murcko = set(apixaban.GetSubstructMatch(GetScaffoldForMol(apixaban)))
     registry = dm.build_mask_from_query(apixaban, dm.SCAFFOLD_DECORATION, query=None)
-    dispatcher = extract_scaffold_elaboration(
-        [apixaban], invert_mask=True, includeHs=False
-    )[0]
-    assert int(registry.sum()) == 29
-    assert int(dispatcher.sum()) == 27
+    dispatcher = extract_scaffolds([apixaban], invert_mask=False)[0]
+
+    assert {i for i, v in enumerate(registry) if v} == murcko
+    assert {i for i, v in enumerate(dispatcher) if v} == murcko
+    assert len(murcko) == 29
+
+
+def test_lactam_carbonyl_oxygens_are_held_by_default(apixaban):
+    """The specific chemistry the old default got wrong.
+
+    extract_scaffold_elaboration moved apixaban's two lactam carbonyl oxygens
+    (atoms 19 and 33) into the decoration set while leaving their ring carbons
+    fixed, so the model was asked to regenerate the oxygen hanging off a fixed
+    carbonyl carbon and could drop or substitute it.
+    """
+    mask = dm.build_mask_from_query(apixaban, dm.SCAFFOLD_DECORATION, query=None)
+    for idx in (19, 33):
+        atom = apixaban.GetAtomWithIdx(idx)
+        assert atom.GetSymbol() == "O"
+        assert bool(mask[idx]), f"atom {idx} (lactam C=O oxygen) must be fixed"
+
+
+def test_scaffold_defaults_are_complementary(apixaban):
+    """Decoration keeps what hopping replaces, with no flag given."""
+    dec = dm.build_mask_from_query(apixaban, dm.SCAFFOLD_DECORATION, query=None)
+    hop = dm.build_mask_from_query(apixaban, dm.SCAFFOLD_HOPPING, query=None)
+    assert bool((dec ^ hop).all())
 
 
 def test_describe_mask_reports_both_counts(apixaban):

@@ -233,23 +233,17 @@ def resolve_region_mask(
     result to :func:`build_mask`, which decides whether naming means keeping or
     replacing.
 
-    When the query is omitted and the mode allows it, the Murcko scaffold is
-    used. For scaffold_decoration the historical default was Murcko plus
-    functional groups (fixing 27 of apixaban's 34 atoms), whereas bare Murcko
-    fixes 29; the difference is which exocyclic groups count as decoration.
-    Murcko is used here because it is the documented, predictable default, and
-    a user wanting the other split can express it in SMARTS.
+    When the query is omitted and the mode allows it, the RDKit Murcko scaffold
+    is used (``GetScaffoldForMol``), which is unambiguous and imposes no
+    restriction on which heavy atoms may belong to the scaffold.
 
-    KNOWN DIVERGENCE: the generation dispatcher in ``interpolate.py`` still uses
-    ``extract_scaffold_elaboration`` for its no-flag default, so an actual run
-    of ``--scaffold_decoration`` without ``--scaffold`` fixes 27 atoms while
-    this function reports 29. Both are defensible definitions of "the
-    scaffold", but the same flag resolving differently by code path is a trap:
-    it silently shifts every decoration count by 2 on this molecule. The two
-    defaults should be reconciled -- preferably by routing the dispatcher
-    through here -- and until then measurements must state which path produced
-    them. Passing --scaffold explicitly avoids the ambiguity entirely, which is
-    the recommended usage.
+    The earlier default for scaffold_decoration was
+    ``extract_scaffold_elaboration``, which computes Murcko and then SUBTRACTS
+    atoms flagged by RDKit's IFG functional-group perception. On apixaban that
+    fixed 27 of 34 atoms rather than Murcko's 29, the two removed atoms being
+    the lactam carbonyl oxygens -- whose ring carbons stayed fixed. That asks
+    the model to regenerate the oxygen on a fixed carbonyl carbon, so it may
+    drop or substitute it. Both paths now use Murcko, verified equal by test.
 
     Args:
         mol: Reference molecule.
@@ -335,6 +329,74 @@ def any_mode_active(source, extra_flags=()) -> bool:
     """
     names = tuple(CONDITIONING_FLAGS) + tuple(extra_flags)
     return any(bool(getattr(source, name, False)) for name in names)
+
+
+#: Interpolant-level mode strings mapped to design modes. The two are not the
+#: same vocabulary: both substructure modes share the code path named
+#: "substructure_inpainting" and differ only in polarity, and
+#: scaffold_decoration is still called scaffold_elaboration internally because
+#: released checkpoints store that hyperparameter name.
+INTERPOLANT_MODE_TO_DESIGN_MODE = {
+    "scaffold_hopping": SCAFFOLD_HOPPING,
+    "scaffold_elaboration": SCAFFOLD_DECORATION,
+    "fragment_growing": FRAGMENT_GROWING,
+    "de_novo": DE_NOVO,
+}
+
+
+def expected_fixed_mask(
+    ref_mol: Chem.Mol,
+    interpolant_mode: str,
+    scaffold_query=None,
+    substructure_query=None,
+    region_is_fixed: bool = True,
+    query_format: str = "auto",
+    first_match_only: bool = False,
+) -> Optional[torch.Tensor]:
+    """Mask of atoms a run was supposed to KEEP, for post-hoc validation.
+
+    ``--filter_cond_substructure`` needs the same mask the prior was built
+    from. Deriving it independently is how the two drift: the filter used
+    ``extract_scaffold_elaboration`` while the dispatcher moved to the Murcko
+    scaffold, and for substructure modes it still used the pre-unification
+    polarity (``invert_mask=True``), so it validated the atoms that were
+    REGENERATED rather than the ones held fixed -- rejecting correct molecules
+    and passing wrong ones. Routing both through this function makes them agree
+    by construction.
+
+    Args:
+        ref_mol: Reference molecule the run was conditioned on.
+        interpolant_mode: Mode string as returned by ``get_conditional_mode``.
+        scaffold_query: ``--scaffold`` value, if any.
+        substructure_query: ``--substructure`` value, if any.
+        region_is_fixed: For substructure modes, whether the named region was
+            kept (``--substructure_inpainting``) or replaced
+            (``--substructure_replacement``).
+        query_format: Query language handling, as for the CLI flag.
+        first_match_only: Whether only the first match was used.
+
+    Returns:
+        Boolean mask, True meaning the atom should still be present, or None
+        for modes whose constraint cannot be checked from the reference alone.
+    """
+    if interpolant_mode == "substructure_inpainting":
+        mode = SUBSTRUCTURE_INPAINTING if region_is_fixed else SUBSTRUCTURE_REPLACEMENT
+        query = substructure_query
+    elif interpolant_mode in INTERPOLANT_MODE_TO_DESIGN_MODE:
+        mode = INTERPOLANT_MODE_TO_DESIGN_MODE[interpolant_mode]
+        query = scaffold_query
+    else:
+        # interaction_conditional and anything unrecognised: no ligand-topology
+        # constraint to check.
+        return None
+
+    return build_mask_from_query(
+        ref_mol,
+        mode,
+        query=query,
+        query_format=query_format,
+        first_match_only=first_match_only,
+    )
 
 
 def describe_mask(mode: str, mask: torch.Tensor) -> str:
