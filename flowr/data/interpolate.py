@@ -2926,20 +2926,30 @@ class GeometricInterpolant(Interpolant):
             else:
                 N_variable_sampled = self.grow_size
         elif N_variable == 0:
-            # Everything is fixed, nothing to generate
-            print(
-                f"For mode '{mode}': All {len(mask)} atoms are marked as fixed, nothing to generate. Falling back to de novo."
+            # Every atom is fixed, so the reference supplies no atom budget.
+            #
+            # This is the ordinary case for a BARE SCAFFOLD: a scaffold IS its own
+            # Murcko scaffold, so perception marks all of it fixed and leaves
+            # nothing to decorate. Measured on apixaban fragments, it is also
+            # size-independent -- a 29-atom bare scaffold hits it just as a
+            # 16-atom one does, which is why "the model cannot handle small
+            # references" was the wrong diagnosis.
+            #
+            # Falling back to de novo here was silently wrong: the user asked to
+            # hold a region and received unconditional molecules that merely
+            # happened to have the reference's atom count, with the scaffold
+            # retained in 0 of 6 samples. The budget is a missing INPUT, not a
+            # reason to discard the constraint, and --decoration_size supplies it
+            # (verified: 6/6 retention at the requested size on the same
+            # reference that returns 0/6 without it).
+            raise design_modes.DesignModeError(
+                f"mode '{mode}': all {len(mask)} atoms of the reference are fixed, "
+                "so it specifies no atoms to generate. This is normal for a bare "
+                "scaffold, which is its own Murcko scaffold. Pass "
+                "--decoration_size N (or --decoration_size_dist) to say how many "
+                "atoms to add, or supply a reference that already carries the "
+                "substituents you want replaced."
             )
-            from_mol = self.prior_sampler.sample_molecule(
-                to_mol.seq_length, symmetrize=self.symmetrize
-            )
-            from_mol = from_mol._copy_with(
-                fragment_mask=torch.zeros(
-                    to_mol.seq_length, dtype=torch.bool, device=to_mol.coords.device
-                ),
-                fragment_mode=mode,
-            )
-            return from_mol
         else:
             # Normal case: extract fixed fragment and determine variable size
             if not self.sample_mol_sizes:

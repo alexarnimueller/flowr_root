@@ -303,6 +303,15 @@ were relying on the old split, pass it explicitly as SMARTS via `--scaffold`.
 - `--fragment_growing`: Keep the whole reference and grow additional atoms
 - `--interaction_conditional`: Interaction-constrained generation (using ProLIF to extract interactions). Orthogonal to the modes above.
 
+**Give a full-size reference, then name the region.** Do not carve the reference down to
+the part you want to keep. Conditioning is applied to a complete molecule, so the reference
+is what the model sees, and a fragment-sized reference is far below the size distribution it
+was trained on. Measured on a factor Xa case: the same 10-atom bicyclic is retained in 6/6
+molecules when named with `--scaffold` inside the intact 34-atom ligand, and in 0/6 when the
+ligand is first cut down to that fragment. A bare scaffold additionally has no free atoms at
+all (it is its own Murcko scaffold), so it specifies no atom budget and the run stops with an
+error unless you pass `--decoration_size`.
+
 **Naming the region:**
 
 - `--scaffold`: SMARTS (preferred), SMILES, or atom indices defining the scaffold for the two scaffold modes. Omit to use automatic Murcko perception. E.g. `--scaffold 'c1nn(-c2ccccc2)c2c1CCNC2=O'`
