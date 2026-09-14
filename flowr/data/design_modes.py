@@ -210,10 +210,13 @@ def build_mask(
             "target."
         )
     if region_mask.all() and not REGION_IS_FIXED[mode]:
+        # Do NOT suggest "--de_novo": no such flag exists. de_novo is the
+        # registry's name for the absence of a conditioning mode, which is what
+        # get_conditional_mode returns when no mode flag is set.
         raise DesignModeError(
             f"--{REGION_FLAG[mode]} matched the entire molecule, so mode "
-            f"'{mode}' would regenerate everything. Use --{DE_NOVO} if that is "
-            "the intent."
+            f"'{mode}' would regenerate everything. If that is the intent, "
+            "run unconditional generation by passing no mode flag at all."
         )
 
     # The single polarity decision, applied once for all modes.

@@ -241,7 +241,10 @@ the polarity:
 | `--substructure_inpainting` | **kept** | hold any part of the ligand, regenerate the rest |
 | `--substructure_replacement` | **regenerated** | replace a fragment, linker or core |
 | `--fragment_growing` | everything kept | grow outward from a fragment |
-| `--de_novo` | nothing kept | unconstrained generation in the pocket |
+| *(no mode flag)* | nothing kept | unconstrained generation in the pocket |
+
+There is no `--de_novo` flag: unconditional generation is what you get by passing none of
+the mode flags above. `de_novo` appears internally as the name for that state.
 
 `--scaffold_decoration`/`--scaffold_hopping` and
 `--substructure_inpainting`/`--substructure_replacement` are the same operation at opposite
