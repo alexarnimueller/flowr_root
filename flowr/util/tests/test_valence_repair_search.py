@@ -963,7 +963,7 @@ class CandidateGeneratorTests(unittest.TestCase):
         # the model would rather have DOUBLE bonds here than the SINGLE ones it argmaxed
         bonds = {(0, k): {1: 0.5, 2: 0.45, 3: 0.04, 0: 0.01} for k in range(1, 5)}
         start, atom_p, charge_p, bond_p = self._start_state(atoms, charges, bonds, 5)
-        successors, _ = valence_repair._successors(
+        successors, _, _ = valence_repair._successors(
             start,
             0,
             atom_p,
@@ -1002,12 +1002,12 @@ class CandidateGeneratorTests(unittest.TestCase):
         atoms, charges, bonds = deletion_only_ammonium()
         start, atom_p, charge_p, bond_p = self._start_state(atoms, charges, bonds, 5)
         args = (start, 0, atom_p, charge_p, bond_p, ATOM_TOKENS, CHARGE_VALUES)
-        allowed, blocked_any = valence_repair._successors(*args, top_k=4)
+        allowed, blocked_any, _ = valence_repair._successors(*args, top_k=4)
         self.assertTrue(
             allowed, "precondition: the unguarded generator offers the deletions"
         )
         self.assertIs(blocked_any, False)
-        guarded, blocked = valence_repair._successors(
+        guarded, blocked, _ = valence_repair._successors(
             *args, top_k=4, allow_bond_deletion=False
         )
         self.assertEqual(guarded, [])

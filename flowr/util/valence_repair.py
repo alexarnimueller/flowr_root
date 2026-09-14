@@ -142,6 +142,11 @@ class RepairOutcome:
     assignment was found. `attempted and not repaired` is the honest failure and returns the
     argmax bit-for-bit -- an unrepairable molecule is left broken rather than mangled.
 
+    `protection_blocked` says `protected_atoms` withheld a candidate: an edit to a fixed
+    atom's element or charge, or to a bond with both ends fixed. Paired with `repaired` it
+    separates "the conditioning cost this molecule its repair" from "nothing was repairable
+    anyway", exactly as `deletion_blocked` does for deletions.
+
     `deletion_blocked` says `allow_bond_deletion=False` actually SUPPRESSED a candidate on
     this molecule. Paired with `repaired` it is what separates "the guard cost this molecule
     its repair" from "nothing was repairable anyway"; it is an upper bound on the former,
@@ -157,6 +162,7 @@ class RepairOutcome:
     cap_hit: Optional[str]
     states_expanded: int
     deletion_blocked: bool = False
+    protection_blocked: bool = False
 
     def bond_list(self) -> np.ndarray:
         """`[n_bonds, 3]` of `(i, j, class)`, exactly `smolF.bonds_from_adj(..., lower_tri=True)`."""
@@ -285,6 +291,7 @@ def repair_valence(
     top_k: int = DEFAULT_TOP_K,
     max_states: int = DEFAULT_MAX_STATES,
     allow_bond_deletion: bool = True,
+    protected_atoms=None,
 ) -> RepairOutcome:
     """Most probable valence-VALID assignment for one molecule, or the argmax unchanged.
 
@@ -341,7 +348,13 @@ def repair_valence(
         )
 
     def outcome(
-        state: _State, attempted, repaired, cap_hit, expanded, blocked=False
+        state: _State,
+        attempted,
+        repaired,
+        cap_hit,
+        expanded,
+        blocked=False,
+        protection_blocked=False,
     ) -> RepairOutcome:
         return RepairOutcome(
             atom_classes=np.asarray(state.atom_classes, dtype=np.int64),
@@ -355,6 +368,7 @@ def repair_valence(
             cap_hit=cap_hit,
             states_expanded=expanded,
             deletion_blocked=blocked,
+            protection_blocked=protection_blocked,
         )
 
     if n_atoms == 0 or not violations(start):
@@ -370,7 +384,17 @@ def repair_valence(
     expanded = 0
     cap_states = False
     cap_edits = False
+    # Atoms the caller pinned (inpainting/fragment conditioning). Edits that would
+    # alter them are withheld by the candidate generator, not filtered from the
+    # answer, so protected branches never consume the max_states budget.
+    # `or ()` would raise on a numpy array ("truth value ... is ambiguous"), and
+    # callers naturally pass one: a fragment mask's nonzero indices.
+    protected_set = frozenset(
+        int(i) for i in (() if protected_atoms is None else protected_atoms)
+    )
+
     blocked = False
+    protection_blocked = False
 
     while heap:
         _, _, state_index = heapq.heappop(heap)
@@ -384,6 +408,7 @@ def repair_valence(
                 cap_hit=None,
                 expanded=expanded,
                 blocked=blocked,
+                protection_blocked=protection_blocked,
             )
         if len(state.edits) >= max_edits:
             cap_edits = True
@@ -393,7 +418,7 @@ def repair_valence(
             break
         expanded += 1
 
-        successors, suppressed = _successors(
+        successors, suppressed, protection_hit = _successors(
             state,
             offenders[0].index,
             atom_probabilities,
@@ -403,8 +428,10 @@ def repair_valence(
             charge_values,
             top_k,
             allow_bond_deletion=allow_bond_deletion,
+            protected=protected_set,
         )
         blocked = blocked or suppressed
+        protection_blocked = protection_blocked or protection_hit
         for successor in successors:
             key = successor.key()
             if key in seen:
@@ -430,6 +457,7 @@ def repair_valence(
         cap_hit=cap_hit,
         expanded=expanded,
         blocked=blocked,
+        protection_blocked=protection_blocked,
     )
 
 
@@ -444,7 +472,8 @@ def _successors(
     top_k: int,
     *,
     allow_bond_deletion: bool = True,
-) -> tuple[list[_State], bool]:
+    protected: frozenset[int] = frozenset(),
+) -> tuple[list[_State], bool, bool]:
     """Every single edit LOCAL to `atom`, each already priced in model log-probability.
 
     Local means: this atom's charge, this atom's element, and the orders of the bonds
@@ -459,8 +488,11 @@ def _successors(
     loses the "charge AND element on one atom" solution -- about 0.3% of repairs. Keyed by
     `(channel, index)` it would not, at the cost of a larger frontier.
 
-    Returns `(successors, suppressed)`, where `suppressed` says at least one candidate was
-    withheld by `allow_bond_deletion=False`. The guard lives HERE rather than on the answer:
+    Returns `(successors, suppressed, protection_blocked)`. `suppressed` says at least one
+    candidate was withheld by `allow_bond_deletion=False`; `protection_blocked` says at
+    least one was withheld because it would have edited the conditioned region. They are
+    reported separately because conflating them would make `deletion_blocked` fire on
+    molecules where no deletion was ever considered. The guard lives HERE rather than on the answer:
     a post-filter would still let doomed deletion branches be expanded, and expansions are
     what `max_states` spends -- on a dense molecule the deletions would crowd the surviving
     repairs out of the budget and the guard would read as "nothing was repairable".
@@ -470,8 +502,13 @@ def _successors(
     charge = charge_values[state.charge_classes[atom]]
     out: list[_State] = []
     suppressed = False
+    protection_blocked = False
 
-    if (atom,) not in used:
+    # A protected atom's own element and charge are off the table. Its bonds are
+    # handled per-bond below, because a bond from a protected atom to a free one
+    # is a legitimate attachment-point edit; only bonds with BOTH ends protected
+    # are internal to the conditioned region.
+    if (atom,) not in used and atom not in protected:
         current = state.charge_classes[atom]
         for candidate in _ranked_alternatives(
             charge_probabilities[atom], current, top_k
@@ -521,6 +558,14 @@ def _successors(
         i, j = (atom, other) if atom > other else (other, atom)
         if (i, j) in used:
             continue
+        # Both ends protected => the bond is INTERNAL to the conditioned region,
+        # and editing it changes the very substructure the user pinned. This is
+        # the edit that silently rewrote a scaffold: a near-degenerate bond order
+        # inside the fixed core is frequently the cheapest escape from an
+        # over-valence, so it is exactly what the search reaches for first.
+        if i in protected and j in protected:
+            protection_blocked = True
+            continue
         current = state.bonds[i][j]
         order = _bond_order(current)
         if order <= 0.0:
@@ -558,7 +603,7 @@ def _successors(
                     cost=state.cost + cost,
                 )
             )
-    return out, suppressed
+    return out, suppressed, protection_blocked
 
 
 # `valence_report.bond_order` itself, not a copy of it: "which classes are a DEMOTION"
