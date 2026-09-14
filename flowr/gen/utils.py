@@ -13,7 +13,6 @@ import torch
 
 from flowr.data import design_modes
 import yaml
-from pymol import cmd
 from rdkit import Chem
 from rdkit.Chem import DataStructs, rdFingerprintGenerator
 
@@ -229,6 +228,15 @@ def get_conditional_mode(args):
     name: both substructure modes share the "substructure_inpainting" code path
     and differ only in polarity, and scaffold_decoration is still called
     scaffold_elaboration internally because checkpoints store that name.
+
+    Every flag is read through ``getattr`` WITH A DEFAULT, and that is
+    load-bearing rather than defensive: the generation entrypoints do not all
+    define the same set, and ``generate_from_sdf_mol`` has no
+    ``--interaction_conditional``. Since that flag is only reached when no
+    other mode is set, an unguarded read crashed every *unconditional*
+    ligand-only run with ``AttributeError`` while conditional runs passed --
+    masked by the shipped generate_sdf.sl, which hardcodes a mode. (Diagnosis
+    upstream's; both rewrites of this function landed independently.)
     """
     # Highest priority first; interaction conditioning is orthogonal and last.
     dispatch = [
@@ -272,6 +280,8 @@ def filter_substructure(
                         'interaction_conditional']
         substructure_query: SMILES/SMARTS string for substructure mode or list of atom IDs
         max_fragment_cuts: Maximum cuts for fragment mode
+                        mode (0-indexed). Must match the index used to build the
+                        inpainting prior, otherwise nothing will match.
     Returns:
         Filtered list of generated molecules
     """
@@ -316,6 +326,8 @@ def check_substructure_match(
                         'interaction_conditional']
         substructure_query: SMILES/SMARTS string for substructure mode or list of atom IDs
         max_fragment_cuts: Maximum cuts for fragment mode
+                        mode (0-indexed). Must match the index used to build the
+                        inpainting prior, otherwise nothing will match.
 
     Returns:
         True if the generated molecule contains the required substructure, False otherwise
@@ -461,7 +473,7 @@ def load_util(
         coord_std=coord_std,
         pocket_noise=args.pocket_noise,
         pocket_noise_std=args.pocket_coord_noise_std,
-        use_interactions=args.interaction_conditional,
+        use_interactions=getattr(args, "interaction_conditional", False),
         rotate_complex=args.arch == "transformer",
     )
     # Initialize conformer generator if graph inpainting is enabled and set to conformer
@@ -545,8 +557,8 @@ def load_util(
             else None
         ),
         flow_interactions=hparams["flow_interactions"],
-        interaction_conditional=args.interaction_conditional,
-        scaffold_hopping=args.scaffold_hopping,
+        interaction_conditional=getattr(args, "interaction_conditional", False),
+        scaffold_hopping=getattr(args, "scaffold_hopping", False),
         scaffold_elaboration=getattr(args, "scaffold_decoration", False),
         linker_inpainting=False,  # mode removed
         core_growing=False,  # mode removed
@@ -561,7 +573,7 @@ def load_util(
         fragment_size_variation=getattr(args, "fragment_size_variation", 0.1),
         prior_center=prior_center,
         max_fragment_cuts=args.max_fragment_cuts,
-        substructure_inpainting=args.substructure_inpainting,
+        substructure_inpainting=getattr(args, "substructure_inpainting", False),
         substructure=args.substructure,
         scaffold=getattr(args, "scaffold", None),
         scaffold_decoration=getattr(args, "scaffold_decoration", False),
@@ -580,22 +592,22 @@ def load_util(
         rotation_alignment=(
             False
             or False
-            or args.fragment_growing
+            or getattr(args, "fragment_growing", False)
             or getattr(args, "scaffold_decoration", False)
-            or args.substructure_inpainting
-            or args.substructure_replacement
-            or args.scaffold_hopping
+            or getattr(args, "substructure_inpainting", False)
+            or getattr(args, "substructure_replacement", False)
+            or getattr(args, "scaffold_hopping", False)
             or False
         )
         and args.rotation_alignment,
         permutation_alignment=(
             False
             or False
-            or args.fragment_growing
+            or getattr(args, "fragment_growing", False)
             or getattr(args, "scaffold_decoration", False)
-            or args.substructure_inpainting
-            or args.substructure_replacement
-            or args.scaffold_hopping
+            or getattr(args, "substructure_inpainting", False)
+            or getattr(args, "substructure_replacement", False)
+            or getattr(args, "scaffold_hopping", False)
             or False
         )
         and args.permutation_alignment,
@@ -612,8 +624,6 @@ def load_util(
         inference=True,
     )
 
-    # Store ring_system_index for core_growing mode
-    eval_interpolant.ring_system_index = getattr(args, "ring_system_index", 0)
 
     # Report the decoration-size POLICY. This says what was configured, not
     # what generation did: the sampler existing does not prove its value reached
@@ -711,14 +721,14 @@ def load_util_mol(
         coord_interpolation=("linear" if not args.use_cosine_scheduler else "cosine"),
         type_interpolation=categorical_interpolation,
         bond_interpolation=categorical_interpolation,
-        scaffold_hopping=args.scaffold_hopping,
+        scaffold_hopping=getattr(args, "scaffold_hopping", False),
         scaffold_elaboration=getattr(args, "scaffold_decoration", False),
         linker_inpainting=False,  # mode removed
         core_growing=False,  # mode removed
         fragment_inpainting=False,  # mode removed
         fragment_growing=getattr(args, "fragment_growing", False),
         max_fragment_cuts=args.max_fragment_cuts,
-        substructure_inpainting=args.substructure_inpainting,
+        substructure_inpainting=getattr(args, "substructure_inpainting", False),
         substructure=args.substructure,
         scaffold=getattr(args, "scaffold", None),
         scaffold_decoration=getattr(args, "scaffold_decoration", False),
@@ -737,22 +747,22 @@ def load_util_mol(
         rotation_alignment=(
             False
             or False
-            or args.fragment_growing
+            or getattr(args, "fragment_growing", False)
             or getattr(args, "scaffold_decoration", False)
-            or args.substructure_inpainting
-            or args.substructure_replacement
-            or args.scaffold_hopping
+            or getattr(args, "substructure_inpainting", False)
+            or getattr(args, "substructure_replacement", False)
+            or getattr(args, "scaffold_hopping", False)
             or False
         )
         and args.rotation_alignment,
         permutation_alignment=(
             False
             or False
-            or args.fragment_growing
+            or getattr(args, "fragment_growing", False)
             or getattr(args, "scaffold_decoration", False)
-            or args.substructure_inpainting
-            or args.substructure_replacement
-            or args.scaffold_hopping
+            or getattr(args, "substructure_inpainting", False)
+            or getattr(args, "substructure_replacement", False)
+            or getattr(args, "scaffold_hopping", False)
             or False
         )
         and args.permutation_alignment,
@@ -820,7 +830,9 @@ def load_data_from_lmdb(
     # Split the dataset for multi-processing via job arrays
     if hasattr(args, "mp_index"):
         systems = [system for system in dataset if system is not None]
-        systems = split_list(systems, args.gpus)[args.mp_index - 1]
+        # ``--gpus`` is a device *count* and ``--gpus 0`` selects CPU, so taking it
+        # literally as a shard count raises ZeroDivisionError. CPU is one shard.
+        systems = split_list(systems, max(1, args.gpus))[args.mp_index - 1]
         return systems
 
     return dataset
@@ -859,6 +871,18 @@ def load_data_from_pdb(
         chain_id=chain_id,
         **processing_params,
     )
+    if system is None:
+        # process_complex() returns None on every failure it handles itself (empty or
+        # too-small pocket, unreadable ligand, ...). Calling remove_hs() on that None
+        # raised a bare AttributeError, which told the user nothing -- most visibly
+        # when --chain_id picked a real chain that holds no pocket for this ligand.
+        source = args.pdb_file if args.pdb_file is not None else args.pdb_id
+        detail = f" for chain '{chain_id}'" if chain_id is not None else ""
+        raise RuntimeError(
+            f"Could not build a pocket complex from {source}{detail}. "
+            "See the messages above for the reason (e.g. an empty or too-small "
+            "pocket, or a ligand that could not be read)."
+        )
     # Forward remove_aromaticity so the ligand is re-featurized in the SAME bond
     # representation the model was trained on. remove_hs() re-runs mol_to_torch on
     # the ligand; without remove_aromaticity it sanitizes to aromatic bonds
@@ -929,7 +953,9 @@ def load_data_from_lmdb_mol(
         f"Dataset split is set to {args.dataset_split}. Number of molecules: {len(dataset)}"
     )
     molecules = [molecule for molecule in dataset if molecule is not None]
-    molecules = split_list(molecules, args.gpus)[args.mp_index - 1]
+    # ``--gpus`` is a device *count* and ``--gpus 0`` selects CPU, so taking it
+    # literally as a shard count raises ZeroDivisionError. CPU is one shard.
+    molecules = split_list(molecules, max(1, args.gpus))[args.mp_index - 1]
     return molecules
 
 
@@ -975,7 +1001,9 @@ def load_data_from_sdf_mol(
 
     print(f"Number of molecules: {len(dataset)}")
     molecules = [molecule for molecule in dataset if molecule is not None]
-    molecules = split_list(molecules, args.gpus)[args.mp_index - 1]
+    # ``--gpus`` is a device *count* and ``--gpus 0`` selects CPU, so taking it
+    # literally as a shard count raises ZeroDivisionError. CPU is one shard.
+    molecules = split_list(molecules, max(1, args.gpus))[args.mp_index - 1]
     return molecules
 
 
@@ -1034,6 +1062,10 @@ def write_ligand_pocket_complex_pdb(
         raise ValueError("No ligand molecules provided.")
     if not all_gen_pdbs:
         raise ValueError("No pocket PDB files provided.")
+
+    # PyMOL is an optional dependency (no linux-aarch64 wheel exists upstream) and
+    # is only needed by this helper, so import it lazily.
+    from pymol import cmd
 
     for i, (lig, pdb_file) in enumerate(zip(all_gen_ligs, all_gen_pdbs)):
         out_path = Path(output_path) / f"{complex_name}_{i}.pdb"
@@ -1586,3 +1618,57 @@ def optimize_molecule_rdkit(mol):
     except Exception as e:
         print(f"Error optimizing molecule: {e}")
         return None, None, None
+
+
+def repair_stats_summary(model):
+    """The valence-repair census for a finished run, or ``None`` if the repair was OFF.
+
+    Read off the builder, which accumulates for the life of the process: nothing calls
+    ``reset_repair_stats`` after construction, which is what a whole-run census wants.
+
+    Keyed on the FLAG, not on ``attempted``. Returning ``None`` for "nothing was
+    over-valent" would make a clean run indistinguishable from a run where the flag was
+    never passed, and those are different facts -- the first says the repair had nothing to
+    do, the second says it was not asked.
+
+    Worth recording rather than leaving on the object: ``cap_states`` and ``cap_edits`` are
+    the honesty mechanism -- a search that ran out of budget leaves the molecule UNREPAIRED,
+    and without the counts a truncated search reads as "everything that could be repaired
+    was".
+    """
+    builder = getattr(model, "builder", None)
+    if builder is None or not getattr(builder, "ligand_valence_repair", False):
+        return None
+    stats = getattr(builder, "repair_stats", None)
+    return dict(stats) if stats else None
+
+
+def print_repair_stats(stats):
+    """Print the census returned by :func:`repair_stats_summary`, if there is one."""
+    if not stats:
+        return
+    attempted = stats["attempted"]
+    repaired = stats["repaired"]
+    if not attempted:
+        print("\nValence repair: ON, but no build failed with an over-valence.")
+        return
+    print(
+        f"\nValence repair: {repaired}/{attempted} failed builds repaired "
+        f"({stats['repaired_ok']} connected, {stats['repaired_disconnected']} disconnected), "
+        f"{stats['unrepaired']} unrepairable, {stats['rejected']} rejected by the rebuild."
+    )
+    if stats["cap_states"] or stats["cap_edits"]:
+        print(
+            f"  bounds hit: max_states x{stats['cap_states']}, max_edits x{stats['cap_edits']} "
+            "-- those molecules were left UNREPAIRED, so this is not a complete search."
+        )
+    if stats["edits_bond_deletions"]:
+        print(
+            f"  {stats['edits_bond_deletions']} accepted edit(s) DELETED a bond; "
+            f"{stats['repaired_disconnected']} repair(s) came back disconnected."
+        )
+    if stats["unrepaired_deletion_blocked"]:
+        print(
+            f"  {stats['unrepaired_deletion_blocked']} molecule(s) were left unrepaired with "
+            "a bond deletion suppressed -- what the no-deletion guard cost."
+        )

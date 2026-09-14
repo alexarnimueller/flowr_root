@@ -3161,6 +3161,15 @@ class GeometricInterpolant(Interpolant):
                 # polarity depended on the blanket local-mode inversion,
                 # and its region is now expressible with --substructure /
                 # --scaffold. resolve_mode names the replacement.
+                #
+                # NOTE on the merge with upstream main: upstream FIXED this
+                # mode rather than removing it, forwarding --ring_system_index
+                # into extract_cores so the core mask stops always pinning ring
+                # system 0. That fix is deliberately not carried over, because
+                # the mode itself is gone here. If core_growing is ever
+                # restored, restore it on the unified convention -- an explicit
+                # polarity in the registry rather than the deleted inversion --
+                # and take upstream's ring_system_index forwarding with it.
                 design_modes.resolve_mode(mode)
 
             elif mode == "fragment_growing":

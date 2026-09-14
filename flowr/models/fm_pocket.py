@@ -722,6 +722,21 @@ class LigandPocketCFM(pl.LightningModule):
             vocab_aromatic=vocab_aromatic,
             pocket_noise=self.pocket_noise,
             save_dir=self.hparams.save_dir,
+            # Inference-time decode repair. `.get()` because the TRAINING path never sets
+            # these keys, and `self.hparams` raises on a missing attribute.
+            ligand_valence_repair=self.hparams.get("ligand_valence_repair", False),
+            ligand_valence_repair_allow_bond_deletion=self.hparams.get(
+                "ligand_valence_repair_allow_bond_deletion", False
+            ),
+            ligand_valence_repair_max_edits=self.hparams.get(
+                "ligand_valence_repair_max_edits", 2
+            ),
+            ligand_valence_repair_top_k=self.hparams.get(
+                "ligand_valence_repair_top_k", 4
+            ),
+            ligand_valence_repair_max_states=self.hparams.get(
+                "ligand_valence_repair_max_states", 200
+            ),
         )
 
         self.integrator = integrator
@@ -1330,7 +1345,7 @@ class LigandPocketCFM(pl.LightningModule):
             }
             for metric, value in metrics.items():
                 # Show main validity and individual critical metrics in progress bar
-                progbar = metric in ["pb_validity"]
+                progbar = metric in ["pb-validity"]
                 if isinstance(value, dict):
                     for k, v in value.items():
                         self.log(
@@ -2486,16 +2501,29 @@ class LigandPocketCFM(pl.LightningModule):
         molecule, and objective functions are expected to return ``nan`` for
         molecules they cannot score. Coordinates are rescaled by
         ``self.coord_scale`` to match the units property models expect.
+
+        The decode repair is forced OFF here, and that is deliberate. It is a
+        uniform-cost search over the head distributions, run per molecule; this
+        path builds every particle at every integration step, so enabling it
+        would multiply that search by steps x particles for molecules that are
+        thrown away. Its purpose is also wrong for this call site: it exists to
+        rescue a DELIVERABLE whose argmax will not build, whereas an
+        intermediate estimate is expected to be invalid and the objectives
+        already return nan for anything they cannot score. Guidance should see
+        the model's own trajectory, not a repaired version of it.
         """
         try:
             return self._generate_mols(
-                predicted, scale=self.coord_scale, sanitise=False
+                predicted, scale=self.coord_scale, sanitise=False,
+                valence_repair=False,
             )
         except Exception:
             batch_size = predicted["coords"].shape[0]
             return [None] * batch_size
 
-    def _generate_mols(self, generated, scale=1.0, sanitise=True, add_hs=False):
+    def _generate_mols(
+        self, generated, scale=1.0, sanitise=True, add_hs=False, valence_repair=None
+    ):
         coords = generated["coords"] * scale
         atom_dists = generated["atomics"]
         bond_dists = generated["bonds"]
@@ -2512,6 +2540,7 @@ class LigandPocketCFM(pl.LightningModule):
             hybridization_dists=hybridization_dists,
             sanitise=sanitise,
             add_hs=add_hs,
+            valence_repair=valence_repair,
         )
 
         # affinity: TensorDict | None = generated.get("affinity", None)
@@ -2704,12 +2733,25 @@ class LigandPocketCFM(pl.LightningModule):
     def configure_optimizers(self):
         """Configure optimizers and learning rate schedulers for the model."""
 
-        # Get all model parameters
-        params = list(self.gen.parameters())
+        # Only hand the optimizer parameters it is allowed to update. LoRA and
+        # --freeze_layers set requires_grad=False on most of the generator, and an
+        # unfiltered list made the optimizer carry those frozen tensors anyway (observed:
+        # 1624 tensors, 774 trainable). Harmless today -- frozen params keep grad=None, so
+        # AdamW skips them -- but it is pointless bookkeeping and would start applying
+        # weight decay to frozen weights if optimizer semantics ever changed.
+        params = [p for p in self.gen.parameters() if p.requires_grad]
 
         # Add confidence module parameters if training confidence
         if self.train_confidence and self.confidence_module is not None:
-            params.extend(list(self.confidence_module.parameters()))
+            params.extend(
+                p for p in self.confidence_module.parameters() if p.requires_grad
+            )
+
+        if not params:
+            raise ValueError(
+                "No trainable parameters: every parameter has requires_grad=False. "
+                "Check --freeze_layers / LoRA settings."
+            )
 
         # Initialize optimizer and learning rate scheduler
         opt = torch.optim.AdamW(
