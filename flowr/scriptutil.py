@@ -1081,6 +1081,19 @@ def build_model(
 ):
     # Get hyperparameters from the datamodule, pass these into the model to be saved
     hparams = {
+        # Inference-time decode repair, set here too so the in-training VALIDATION panel
+        # builds molecules the same way generation does. Without this the panel reports a
+        # validity the shipped entrypoints do not produce, which is one of the reasons a
+        # training curve and a test-split number disagree.
+        "ligand_valence_repair": getattr(args, "ligand_valence_repair", True),
+        "ligand_valence_repair_allow_bond_deletion": getattr(
+            args, "ligand_valence_repair_allow_bond_deletion", False
+        ),
+        "ligand_valence_repair_max_edits": getattr(args, "ligand_valence_repair_max_edits", 2),
+        "ligand_valence_repair_top_k": getattr(args, "ligand_valence_repair_top_k", 4),
+        "ligand_valence_repair_max_states": getattr(
+            args, "ligand_valence_repair_max_states", 200
+        ),
         "epochs": args.epochs,
         "gradient_clip_val": args.gradient_clip_val,
         "dataset": args.dataset,
@@ -1310,6 +1323,7 @@ def build_model(
         type_mask_index=type_mask_index,
         bond_mask_index=bond_mask_index,
         use_cosine_scheduler=args.use_cosine_scheduler,
+        cat_noise_euler_guard=getattr(args, "cat_noise_euler_guard", True),
     )
 
     # Build model
@@ -1735,7 +1749,7 @@ def load_model(
         type_mask_index=type_mask_index,
         bond_mask_index=bond_mask_index,
         use_cosine_scheduler=args.use_cosine_scheduler,
-        cat_noise_euler_guard=getattr(args, "cat_noise_euler_guard", False),
+        cat_noise_euler_guard=getattr(args, "cat_noise_euler_guard", True),
     )
     _ckpt = ckpt_path if ckpt_path is not None else args.ckpt_path
     fm_model = CFM.load_from_checkpoint(
@@ -2211,7 +2225,7 @@ def load_mol_model(
         type_mask_index=type_mask_index,
         bond_mask_index=bond_mask_index,
         use_cosine_scheduler=args.use_cosine_scheduler,
-        cat_noise_euler_guard=getattr(args, "cat_noise_euler_guard", False),
+        cat_noise_euler_guard=getattr(args, "cat_noise_euler_guard", True),
     )
 
     # Initialize the ligand flow model
@@ -2304,6 +2318,19 @@ def build_mol_model(
 ):
     # Get hyperparameters from the datamodule, pass these into the model to be saved
     hparams = {
+        # Inference-time decode repair, set here too so the in-training VALIDATION panel
+        # builds molecules the same way generation does. Without this the panel reports a
+        # validity the shipped entrypoints do not produce, which is one of the reasons a
+        # training curve and a test-split number disagree.
+        "ligand_valence_repair": getattr(args, "ligand_valence_repair", True),
+        "ligand_valence_repair_allow_bond_deletion": getattr(
+            args, "ligand_valence_repair_allow_bond_deletion", False
+        ),
+        "ligand_valence_repair_max_edits": getattr(args, "ligand_valence_repair_max_edits", 2),
+        "ligand_valence_repair_top_k": getattr(args, "ligand_valence_repair_top_k", 4),
+        "ligand_valence_repair_max_states": getattr(
+            args, "ligand_valence_repair_max_states", 200
+        ),
         "epochs": args.epochs,
         "gradient_clip_val": args.gradient_clip_val,
         "dataset": args.dataset,
@@ -2407,6 +2434,7 @@ def build_mol_model(
         type_mask_index=type_mask_index,
         bond_mask_index=bond_mask_index,
         use_cosine_scheduler=args.use_cosine_scheduler,
+        cat_noise_euler_guard=getattr(args, "cat_noise_euler_guard", True),
     )
 
     fm_model = LigandCFM(
@@ -2505,6 +2533,19 @@ def build_mol_mean_flow_model(
     """
     # Get hyperparameters from the datamodule
     hparams = {
+        # Inference-time decode repair, set here too so the in-training VALIDATION panel
+        # builds molecules the same way generation does. Without this the panel reports a
+        # validity the shipped entrypoints do not produce, which is one of the reasons a
+        # training curve and a test-split number disagree.
+        "ligand_valence_repair": getattr(args, "ligand_valence_repair", True),
+        "ligand_valence_repair_allow_bond_deletion": getattr(
+            args, "ligand_valence_repair_allow_bond_deletion", False
+        ),
+        "ligand_valence_repair_max_edits": getattr(args, "ligand_valence_repair_max_edits", 2),
+        "ligand_valence_repair_top_k": getattr(args, "ligand_valence_repair_top_k", 4),
+        "ligand_valence_repair_max_states": getattr(
+            args, "ligand_valence_repair_max_states", 200
+        ),
         "epochs": args.epochs,
         "gradient_clip_val": args.gradient_clip_val,
         "dataset": args.dataset,
@@ -2605,6 +2646,7 @@ def build_mol_mean_flow_model(
         type_mask_index=type_mask_index,
         bond_mask_index=bond_mask_index,
         use_cosine_scheduler=args.use_cosine_scheduler,
+        cat_noise_euler_guard=getattr(args, "cat_noise_euler_guard", True),
     )
 
     fm_model = LigandMeanFlowCFM(
