@@ -2059,6 +2059,23 @@ class LigandPocketCFM(pl.LightningModule):
         else:
             predicted = curr
 
+        # Carry the fragment mask onto the result.
+        #
+        # _get_predictions rebuilds `predicted` from a fixed key list, so the
+        # mask is absent by the time molecules are built and the valence repair
+        # has no way to know which atoms inpainting fixed. `prior` holds it, and
+        # this is the last point where both are in scope.
+        #
+        # CARRY-THROUGH ONLY: nothing here reads the mask, and the final_inpaint
+        # gate above is deliberately untouched. An earlier attempt bundled that
+        # gate change in -- re-imposing the reference bonds on the final
+        # prediction -- and produced zero sanitisable molecules, because the
+        # model attaches more decoration bonds to a fixed atom than its valence
+        # headroom allows. Per-step inpainting already holds the region; the only
+        # thing missing downstream was the mask itself.
+        if isinstance(prior, dict) and prior.get("fragment_mask") is not None:
+            predicted["fragment_mask"] = prior["fragment_mask"]
+
         # Move everything to CPU
         predicted = {
             k: v.cpu().detach() if torch.is_tensor(v) else v
@@ -2541,6 +2558,10 @@ class LigandPocketCFM(pl.LightningModule):
             sanitise=sanitise,
             add_hs=add_hs,
             valence_repair=valence_repair,
+            # Atoms inpainting fixed. Without this the repair can rewrite the
+            # conditioned region on its way to a valid decode; absent in
+            # unconditional runs, where it is None and changes nothing.
+            protected_atoms=generated.get("fragment_mask"),
         )
 
         # affinity: TensorDict | None = generated.get("affinity", None)
