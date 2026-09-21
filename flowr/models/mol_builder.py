@@ -152,8 +152,13 @@ class MolBuilder:
         sanitise=True,
         add_hs=False,
         valence_repair=None,
+        protected_atoms=None,
     ):
         """`valence_repair=False` forces the decode repair OFF for this call.
+
+        `protected_atoms` is a [batch, atoms] boolean mask (the fragment mask) naming
+        atoms the repair must not alter. Without it the repair can rewrite the very
+        region inpainting was told to hold.
 
         This entry point decodes GENERATED molecules, so it follows the builder's setting
         by default (`None`). But some callers route a REFERENCE or a scored ligand through
@@ -172,6 +177,11 @@ class MolBuilder:
             aromaticity_dists=aromaticity_dists,
         )
 
+        # Per-molecule indices the repair must not touch. _extract_mols slices
+        # [:n_atoms] rather than boolean-indexing, so a row of the fragment mask
+        # lines up with the extracted arrays directly -- no remapping.
+        protected_per_mol = self._protected_indices(protected_atoms, mask)
+
         self._startup()
         # GENERATED molecules: the valence repair is allowed here, and only here.
         build_fn = partial(
@@ -182,11 +192,31 @@ class MolBuilder:
                 self.ligand_valence_repair if valence_repair is None else bool(valence_repair)
             ),
         )
-        futures = [self._executor.submit(build_fn, *items) for items in extracted]
+        futures = [
+            self._executor.submit(build_fn, *items, protected_atoms=prot)
+            for items, prot in zip(extracted, protected_per_mol)
+        ]
         mols = [future.result() for future in futures]
         self.shutdown()
 
         return mols
+
+    @staticmethod
+    def _protected_indices(protected_atoms, mask):
+        """Fragment mask -> one index list per molecule, or Nones when absent.
+
+        Returns a list as long as the batch so it can be zipped with the
+        extracted molecules whether or not a mask was supplied.
+        """
+        n_mols = int(mask.size(0))
+        if protected_atoms is None:
+            return [None] * n_mols
+        counts = mask.sum(dim=1)
+        out = []
+        for idx in range(n_mols):
+            row = protected_atoms[idx, : int(counts[idx])]
+            out.append([int(i) for i in row.nonzero().flatten().tolist()] or None)
+        return out
 
     def ligs_from_complex(
         self,
@@ -282,7 +312,9 @@ class MolBuilder:
         )
         return mol
 
-    def _repair_valence_decode(self, atom_dists, bond_dists, charge_dists):
+    def _repair_valence_decode(
+        self, atom_dists, bond_dists, charge_dists, protected_atoms=None
+    ):
         """The model's most probable valence-VALID re-decode of an over-valent molecule.
 
         Returns `((tokens, charges, bonds) | None, RepairOutcome | None)`. The triple is
@@ -317,6 +349,7 @@ class MolBuilder:
             top_k=self.ligand_valence_repair_top_k,
             max_states=self.ligand_valence_repair_max_states,
             allow_bond_deletion=self.ligand_valence_repair_allow_bond_deletion,
+            protected_atoms=protected_atoms,
         )
         if not outcome.repaired:
             return None, outcome
@@ -396,6 +429,7 @@ class MolBuilder:
         sanitise=True,
         add_hs=False,
         valence_repair=False,
+        protected_atoms=None,
     ):
         tokens = self._mol_extract_atomics(atom_dists)
         bonds = self._mol_extract_bonds(bond_dists) if bond_dists is not None else None
@@ -434,7 +468,7 @@ class MolBuilder:
         # other cause (an unknown token, a bad bond class, a kekulization error) costs one
         # cheap scan and is left alone.
         repaired, outcome = self._repair_valence_decode(
-            atom_dists, bond_dists, charge_dists
+            atom_dists, bond_dists, charge_dists, protected_atoms=protected_atoms
         )
         accepted = False
         connected = None
